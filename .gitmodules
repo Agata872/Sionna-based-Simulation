@@ -1,3 +1,4 @@
 [submodule "sionna"]
 	path = sionna
 	url = https://github.com/NVlabs/sionna.git
+	ignore = dirty
