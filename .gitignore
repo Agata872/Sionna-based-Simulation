@@ -1,0 +1,9 @@
+# Python 虚拟环境（约 6.7 GB，用 requirements.txt 复现）
+.venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
