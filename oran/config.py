@@ -1,0 +1,146 @@
+"""仿真配置。
+
+所有可调参数集中在 :class:`ORANConfig` 中；O-DU、前传、O-RU、信道、UE 各模块只读取它。
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Union
+
+
+@dataclass
+class CompressionConfig:
+    """一条前传数据流的压缩配置。
+
+    :param method: 压缩方法，见 :func:`oran.compression.available_compressors`
+    :param iq_width: 位宽（BFP 为尾数位宽 udIqWidth）
+    :param backoff_db: 定点化时 I/Q 分量 RMS 相对 16 bit 满量程的回退
+    """
+
+    method: str = "bfp"
+    iq_width: int = 9
+    backoff_db: float = 15.0
+    kwargs: dict = field(default_factory=dict)
+
+
+@dataclass
+class ORANConfig:
+    """O-RAN 7.2x 下行链路级仿真配置（默认：单小区、1 个 O-RU、2 个 UE 的 MU-MIMO）。"""
+
+    # ---- 功能划分 ----
+    category: str = "A"                 # "A"：预编码在 O-DU；"B"：预编码在 O-RU
+
+    # ---- 载波 ----
+    subcarrier_spacing: int = 30        # kHz
+    num_prb: int = 51                   # 30 kHz 下 20 MHz 为 51 个 PRB（612 个子载波）
+    carrier_frequency: float = 3.5e9    # Hz
+    n_cell_id: int = 1
+    slot_number: int = 0
+    frame_number: int = 0
+
+    # ---- 节点与天线 ----
+    num_ue: int = 2
+    num_ue_ant: int = 4                 # 每个 UE 的接收天线数
+    num_oru: int = 1                    # O-RU 个数（cell-free 时 > 1）
+    num_oru_ant: int = 8                # 每个 O-RU 的发射通道数（N_TRX）
+
+    # ---- PDSCH ----
+    num_layers_per_ue: int = 2
+    mcs_index: Union[int, Sequence[int]] = 14   # 可按 UE 给出列表
+    mcs_table: int = 1                  # 1：最高 64QAM；2：最高 256QAM
+    rnti: Optional[Sequence[int]] = None        # 默认 UE k 的 RNTI 为 100 + k
+    dmrs_config_type: int = 1
+    dmrs_length: int = 1
+    dmrs_additional_position: int = 1
+    dmrs_type_a_position: int = 2
+
+    # ---- 预编码（由 O-DU 根据 CSI 计算；Cat A 在 O-DU 执行，Cat B 经 C-plane 下发给 O-RU 执行）----
+    precoder: str = "bd"                # "bd"：块对角化；"ezf"：特征 ZF；"rzf"：特征 RZF
+    rzf_alpha: float = 0.0              # RZF 正则化系数（"rzf" 时使用；0 退化为 ZF）
+    prg_size: int = 2                   # 预编码粒度（PRB），0 表示宽带（全带宽一个预编码）
+
+    # ---- 前传 ----
+    uplane: CompressionConfig = field(default_factory=CompressionConfig)
+    # Cat B 的 C-plane 波束赋形权值压缩（bfwCompMeth / bfwIqWidth）
+    bfw: CompressionConfig = field(default_factory=lambda: CompressionConfig("bfp", 9))
+    mtu_bytes: int = 1500               # 以太网 MTU（eCPRI 消息最大长度）
+
+    # ---- 仿真域 ----
+    domain: str = "freq"                # "freq"：频域（不做 IFFT/FFT）；"time"：时域（O-RU 做 IFFT+CP）
+    fft_size: Optional[int] = None      # 时域 IFFT 点数，None 时取不小于 num_sc/0.85 的最小 2 的幂
+
+    # ---- 信道 ----
+    cdl_model: str = "C"
+    delay_spread: float = 100e-9        # s
+    ue_speed: float = 0.0               # m/s（最大速度，在 [0, ue_speed] 内均匀取值）
+    ue_azimuth_range: float = 120.0     # 各链路 BS 侧方位随机旋转范围（度），使不同 UE 处于不同方向
+    link_gain_db: Optional[List[List[float]]] = None   # [num_ue][num_oru] 大尺度增益，None 为全 0 dB
+
+    # ---- UE 接收机 ----
+    channel_estimation: str = "ls"      # "ls"：DMRS LS + PRG 内线性插值；"perfect"：理想信道
+    ce_window: int = 6                  # LS 估计时每个导频使用的邻近导频数（PRG 内局部线性拟合）
+
+    # ---- 其他 ----
+    device: Optional[str] = None        # None 时使用 sionna.phy.config.device
+
+    # ------------------------------------------------------------------
+    @property
+    def num_layers(self) -> int:
+        """总层数 L。"""
+        return self.num_ue * self.num_layers_per_ue
+
+    @property
+    def num_tx_ant(self) -> int:
+        """所有 O-RU 的发射天线总数。"""
+        return self.num_oru * self.num_oru_ant
+
+    @property
+    def num_subcarriers(self) -> int:
+        return 12 * self.num_prb
+
+    @property
+    def mu(self) -> int:
+        return {15: 0, 30: 1, 60: 2, 120: 3}[self.subcarrier_spacing]
+
+    @property
+    def slots_per_second(self) -> int:
+        return 1000 * 2 ** self.mu
+
+    @property
+    def prg_num_prb(self) -> int:
+        return self.num_prb if self.prg_size == 0 else self.prg_size
+
+    @property
+    def num_prg(self) -> int:
+        return -(-self.num_prb // self.prg_num_prb)
+
+    def mcs_of(self, ue: int) -> int:
+        if isinstance(self.mcs_index, int):
+            return self.mcs_index
+        return list(self.mcs_index)[ue]
+
+    def rnti_of(self, ue: int) -> int:
+        return 100 + ue if self.rnti is None else list(self.rnti)[ue]
+
+    def validate(self) -> None:
+        if self.category not in ("A", "B"):
+            raise ValueError("category 必须为 'A' 或 'B'")
+        if self.domain not in ("freq", "time"):
+            raise ValueError("domain 必须为 'freq' 或 'time'")
+        if self.precoder not in ("bd", "ezf", "rzf"):
+            raise ValueError("precoder 必须为 'bd'、'ezf' 或 'rzf'")
+        if self.channel_estimation not in ("ls", "perfect"):
+            raise ValueError("channel_estimation 必须为 'ls' 或 'perfect'")
+        if self.num_layers > self.num_tx_ant:
+            raise ValueError("总层数不能超过发射天线总数")
+        if self.num_layers_per_ue > self.num_ue_ant:
+            raise ValueError("每个 UE 的层数不能超过其接收天线数")
+        if self.precoder == "bd":
+            dim = self.num_tx_ant - (self.num_ue - 1) * self.num_ue_ant
+            if dim < self.num_layers_per_ue:
+                raise ValueError(
+                    f"块对角化要求 N_t - (K-1)·N_r >= 每 UE 层数（当前 {dim}），"
+                    "请增加发射天线或改用 precoder='ezf'/'rzf'")
+        if self.link_gain_db is not None:
+            if (len(self.link_gain_db) != self.num_ue or
+                    any(len(r) != self.num_oru for r in self.link_gain_db)):
+                raise ValueError("link_gain_db 形状必须为 [num_ue][num_oru]")

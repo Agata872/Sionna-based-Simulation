@@ -21,6 +21,11 @@ Sionna-based Simulation/
 ├── .venv/              # Python 虚拟环境，所有依赖都在这里（不纳入 git）
 ├── sionna/             # 官方仓库 v2.2.0 源码（git 子模块，含 sionna-rt 子模块）
 │   └── tutorials/      #   phy/ 链路级、sys/ 系统级、rt/ 射线追踪 教程
+├── oran/               # O-RAN 7.2x 下行 Cat A / Cat B 链路级仿真（说明见 oran/README.md）
+│   └── compression/    #   前传 IQ 压缩算法（BFP 等）
+├── scripts/            # 仿真脚本，如 compare_cat_a_b.py（Cat A/B × 压缩位宽 × SNR 扫描）
+├── tests/              # 单元测试：python -m unittest discover -s tests -v
+├── results/            # 仿真输出（不纳入 git）
 ├── env.sh              # 激活环境（终端用）
 ├── .env                # VS Code 启动 Python / Jupyter 内核时读取的环境变量
 ├── verify_env.py       # 环境验证脚本
@@ -48,6 +53,18 @@ python verify_env.py                      # 验证环境，全部通过约需 20
 import sionna.phy
 sionna.phy.config.device = "cuda:0"   # 选择 GPU："cuda:0" / "cuda:1" / "cpu"
 sionna.phy.config.seed = 42
+```
+
+## O-RAN 7.2x 下行链路仿真
+
+`oran/` 基于 Sionna PHY 实现了 O-RAN 7.2x 划分下的 PDSCH 下行链路（单小区、2 个 UE 的 MU-MIMO），
+包括 Category A（预编码在 O-DU）和 Category B（预编码在 O-RU），以及前传 IQ 压缩（BFP）。
+设计、配置与扩展方法见 [oran/README.md](oran/README.md)。
+
+```bash
+source env.sh
+python -m unittest discover -s tests -v     # 单元测试
+python scripts/compare_cat_a_b.py           # Cat A/B 对比，结果写入 results/cat_ab/
 ```
 
 ## 注意事项
