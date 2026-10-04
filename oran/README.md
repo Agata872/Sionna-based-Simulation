@@ -14,8 +14,8 @@ O-DU（High-PHY）
   ├─ Cat A：→ 预编码 → 前传 N_TRX 路天线端口流
   └─ Cat B：→ 前传 L 路层流 + C-plane 预编码权值
 前传（7.2x，eCPRI）
-  U-plane：16 bit 定点 → 按 PRB 的 BFP 压缩 →（传输）→ 解压
-  C-plane（Cat B）：预编码权值按 PRB bundle 做 BFP 压缩（Section Extension 11）
+  U-plane：16 bit 定点 → 按 PRB 压缩（BFP / 块缩放 / μ 律）→（传输）→ 解压
+  C-plane（Cat B）：预编码权值按 PRB bundle 压缩（Section Extension 11，方法同上）
 O-RU（Low-PHY）
   [Cat B：按权值逐 RE 预编码] → [时域：PRB 映射到 IFFT 中间 → IFFT + CP] → [DAC：预留]
 信道
@@ -39,6 +39,7 @@ cd "/home/user/Sionna-based Simulation"
 source env.sh
 python -m unittest discover -s tests -v          # 单元测试，约 20 秒
 python scripts/compare_cat_a_b.py --widths ideal 9 5 --snr 16 30 2 --max-batches 5   # 快速试跑
+python scripts/compare_cat_a_b.py --widths ideal 7 bs:7 mu:7 --bfw-width bs:9        # 比较压缩算法
 
 # 完整扫描（Cat A/B × 压缩位宽 × SNR）：两块 GPU 各跑一类，再合并画图
 # Sionna 的随机种子按设备序号偏移，用 CUDA_VISIBLE_DEVICES 让两个进程都在 "cuda:0" 上运行，
@@ -98,7 +99,7 @@ rate = sim.fronthaul_rate(num_prb=273)        # 100 MHz 下单个 O-RU 的前传
 | `pdsch.py` | `PDSCHConfig`（复用 `PUSCHConfig` 的 DMRS / TBS 逻辑）、各 UE 配置、资源网格 |
 | `odu.py` | O-DU High-PHY |
 | `precoding.py` | BD、特征 ZF / RZF，按 PRG 计算与应用 |
-| `compression/` | IQ 压缩算法：`base.py`（基类、定点、比特打包）、`bfp.py`、`none.py` |
+| `compression/` | IQ 压缩算法：`base.py`（基类、定点、比特打包）、`bfp.py`（块浮点）、`block_scaling.py`（块缩放）、`mu_law.py`（μ 律）、`none.py` |
 | `fronthaul.py` | 前传链路（U-plane / C-plane 编解码与统计）、比特率估算 |
 | `oru.py` | O-RU Low-PHY、空口参数（IFFT 点数、保护带、CP） |
 | `channel.py` | 多链路 CDL 信道、CSI 提取、加信道与噪声 |
@@ -122,7 +123,12 @@ rate = sim.fronthaul_rate(num_prb=273)        # 100 MHz 下单个 O-RU 的前传
    最小二乘，平底降到约 −40 dB；插值也只在 PRG 内进行。
 5. **UE 不知道压缩噪声**：LMMSE 只使用热噪声方差 N0，前传压缩失真对 UE 是未知的附加失真。
 6. **定点化**：前传 IQ 先按 16 bit 定点化（O-RAN 不压缩时的格式），缩放使标称功率的 I/Q 分量 RMS 比满量程
-   低 15 dB；之后按 O-RAN WG4 CUS 附录 A.1.1 做 BFP（每 PRB 一个 4 bit 指数，udCompParam 1 字节）。
+   低 15 dB；之后按 O-RAN WG4 CUS v08.00 附录 A 压缩，三种方法每 PRB 都带 1 字节 udCompParam：
+   - BFP（A.1）：4 bit 指数；
+   - 块缩放（A.2）：8 bit 缩放因子 sblockScaler（Q1.7），粒度比 2 的幂次指数细，同位宽下 SQNR 比 BFP 高 2~5 dB；
+   - μ 律（A.3）：4 bit compBitWidth + 4 bit compShift，先整块左移再做 μ = 8 的三段分段线性压扩。
+   三者都与规范伪代码逐比特一致（`tests/test_compression.py` 中用伪代码的逐行翻译做对照）。规范未说明的
+   取整溢出一律做饱和；μ 律解压最后的 "/ 2^compShift" 按伪代码做实数除法。
 7. **信道**：CDL 只描述一对收发机，且簇离开角固定。为使两个 UE 在空间上可分，每条链路、每个样本随机旋转
    BS 阵列方位。每条链路逐样本归一化为单位平均增益，再乘以 `link_gain_db`（cell-free 大尺度衰落）。
 8. **时域仿真**：O-RU 把 PRB 放在 IFFT（默认 1024 点）中间，两侧为保护带，UE 用同样的 FFT 后取出 PRB。
@@ -134,7 +140,7 @@ rate = sim.fronthaul_rate(num_prb=273)        # 100 MHz 下单个 O-RU 的前传
 - **新的压缩算法**：在 `compression/` 下新建文件，继承 `IQCompressor`，设置 `method`（注册名）和
   `param_bits`（每块压缩参数的比特数），实现 `compress` / `decompress`，在 `compression/__init__.py`
   中用 `register_compressor` 注册。之后 `CompressionConfig("新名字", iq_width=...)` 即可在 U-plane
-  和 Cat B 权值上使用。O-RAN 定义的其他方法：block scaling、μ-law、modulation compression、选择性 RE 发送。
+  和 Cat B 权值上使用。O-RAN 定义而尚未实现的方法：modulation compression、选择性 RE 发送。
 - **cell-free**：`num_oru > 1` 时，所有 O-RU 的天线拼成一个 N_t 维阵列做集中式预编码；Cat A 每个 O-RU
   只收自己天线的端口流，Cat B 每个 O-RU 都收全部层流和自己那部分权值。`link_gain_db` 给出各链路的大尺度增益。
 - **Sionna RT 信道**：写一个与 `channel.MultiLinkCDL` 调用接口相同（返回 a、tau）的类替换即可。

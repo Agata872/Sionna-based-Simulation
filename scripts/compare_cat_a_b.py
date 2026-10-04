@@ -10,7 +10,8 @@
     CUDA_VISIBLE_DEVICES=1 python scripts/compare_cat_a_b.py --categories B --out results/cat_b &
     wait; python scripts/compare_cat_a_b.py --merge results/cat_a results/cat_b --out results/cat_ab
 
---widths 的取值：ideal（理想前传，不量化）、none16（16 bit 定点不压缩）、整数 w（BFP，尾数 w bit）。
+--widths 的取值：ideal（理想前传，不量化）、none16（16 bit 定点不压缩）、整数 w（BFP，尾数 w bit），
+或 "方法:w"，方法为 bfp、bs（块缩放）、mu（μ 律），如 --widths ideal 9 bs:9 mu:8。
 同一 --seed 下，各配置在同一 SNR 点上的比特、信道和噪声完全相同（配对比较）。
 
 输出（--out 目录，默认 results/cat_ab）：
@@ -38,16 +39,28 @@ from oran import CompressionConfig, ORANConfig, ORANDownlink  # noqa: E402
 from oran.fronthaul import fronthaul_rate  # noqa: E402
 
 
+METHOD_ALIASES = {"bfp": "bfp", "bs": "block_scaling", "block_scaling": "block_scaling",
+                  "mu": "mu_law", "mu_law": "mu_law", "none": "none"}
+METHOD_LABELS = {"bfp": "BFP", "block_scaling": "块缩放", "mu_law": "μ律", "none": "定点"}
+
+
 def compression_of(width: str) -> CompressionConfig:
+    """ideal | none16 | 整数 w（BFP）| 方法:w，方法为 bfp、bs/block_scaling、mu/mu_law、none。"""
     if width == "ideal":
         return CompressionConfig("ideal", 16)
     if width == "none16":
         return CompressionConfig("none", 16)
+    if ":" in width:
+        method, w = width.split(":")
+        return CompressionConfig(METHOD_ALIASES[method], int(w))
     return CompressionConfig("bfp", int(width))
 
 
 def label_of(width: str) -> str:
-    return {"ideal": "理想前传", "none16": "16 bit 不压缩"}.get(width, f"BFP {width} bit")
+    if width in ("ideal", "none16"):
+        return {"ideal": "理想前传", "none16": "16 bit 不压缩"}[width]
+    comp = compression_of(width)
+    return f"{METHOD_LABELS[comp.method]} {comp.iq_width} bit"
 
 
 def _display_width(text: str) -> int:
@@ -77,7 +90,8 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--categories", nargs="+", default=["A", "B"], choices=["A", "B"])
     p.add_argument("--widths", nargs="+", default=["ideal", "9", "7", "6", "5", "4"])
-    p.add_argument("--bfw-width", default="9", help="Cat B 权值的 BFP 位宽；same 表示与 U-plane 相同")
+    p.add_argument("--bfw-width", default="9",
+                   help="Cat B 权值的压缩，取值同 --widths（如 9、bs:9）；same 表示与 U-plane 相同")
     p.add_argument("--snr", nargs=3, type=float, default=[14, 30, 2], metavar=("START", "STOP", "STEP"))
     p.add_argument("--mcs", type=int, default=20)
     p.add_argument("--mcs-table", type=int, default=2)

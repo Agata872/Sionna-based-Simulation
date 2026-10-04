@@ -35,8 +35,10 @@ COMP_METH_CODES = {
 class CompressedIQ:
     """一批压缩后的 IQ 块。
 
-    ``i``/``q`` 是尾数（整数取值，int32 存储），形状 [..., num_blocks, block_len]；
-    ``param`` 是每块的压缩参数，形状 [..., num_blocks]，没有参数的方法为 None。
+    ``i``/``q`` 是压缩后的样点（整数取值，int32 存储），形状 [..., num_blocks, block_len]；
+    ``param`` 是每块 udCompParam（或 bfwCompParam）字段的整数值，形状 [..., num_blocks]，
+    没有该字段的方法为 None。各方法的含义：BFP 为指数；块缩放为 sblockScaler；
+    μ 律为 compBitWidth << 4 | compShift。
     """
 
     method: str
@@ -119,6 +121,11 @@ class IQCompressor(ABC):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(iq_width={self.iq_width})"
+
+
+def round_half_away(x: torch.Tensor) -> torch.Tensor:
+    """四舍五入，0.5 远离零（MATLAB round 的语义，规范附录 A 的伪代码按此书写）。"""
+    return torch.sign(x) * torch.floor(x.abs() + 0.5)
 
 
 def saturate(x: torch.Tensor, width: int) -> torch.Tensor:

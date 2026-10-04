@@ -1,12 +1,16 @@
-"""块浮点（Block Floating Point, BFP）压缩，O-RAN WG4 CUS 附录 A.1.1，udCompMeth = 1。
+"""块浮点（Block Floating Point, BFP）压缩，O-RAN WG4 CUS（v08.00）附录 A.1，udCompMeth = 1。
 
-每块（U-plane 为一个 PRB 的 12 个 RE）找出 I/Q 分量绝对值的最大值，
-确定一个公共指数 e，使最大值右移 e 位后能放进 iq_width 位有符号整数：
+每块（U-plane 为一个 PRB 的 12 个 RE）确定一个公共指数 e，使块内样点右移 e 位后能放进
+iq_width 位有符号整数（附录 A.1.1 的参考算法）：
 
-    nbits = floor(log2(max|x|)) + 1          # 表示最大幅度所需位数（不含符号位）
-    e     = max(nbits + 1 - iq_width, 0)     # +1 为符号位
-    m     = sat(round(x / 2^e), iq_width)    # 尾数，iq_width 位补码
-    x_hat = m * 2^e                          # 解压
+    maxV     = max(Re, Im)，minV = min(Re, Im)            # 块内 I/Q 的最大值、最小值
+    maxValue = max(maxV, |minV| - 1)                     # 补码负数可多表示一位，如 -256 用 9 bit 即可
+    raw_exp  = floor(log2(maxValue)) + 1                 # 表示 maxValue 所需位数（不含符号位）
+    e        = max(raw_exp - iq_width + 1, 0)            # +1 为符号位
+    m        = sat(round(x / 2^e), iq_width)             # 尾数，iq_width 位补码
+    x_hat    = m * 2^e                                   # 解压（附录 A.1.2）
+
+规范的伪代码未说明取整进位溢出（如 511/2 -> 256 超出 9 bit）如何处理，这里做饱和。
 
 udCompParam 为 1 字节：高 4 位保留，低 4 位为指数（0~15）。
 每个 PRB 的比特数 = 8 + 24 * iq_width，例如 9 bit 时为 224 bit（28 字节），
@@ -45,11 +49,16 @@ class BFPCompressor(IQCompressor):
         return self.iq_width >= self.input_width
 
     def exponent(self, x: torch.Tensor) -> torch.Tensor:
-        """每块的指数，x: [..., num_blocks, block_len] -> [..., num_blocks]（int32）。"""
-        max_abs = torch.maximum(x.real.abs().amax(-1), x.imag.abs().amax(-1))
-        # 对整数 v>0，frexp 给出 v = f * 2^k，f∈[0.5,1)，k 即 v 的位长；v=0 时 k=0
-        _, nbits = torch.frexp(max_abs)
-        return (nbits + 1 - self.iq_width).clamp(0, self.max_exponent).to(torch.int32)
+        """每块的指数，x: [..., num_blocks, block_len] -> [..., num_blocks]（int32）。
+
+        x 的实部、虚部须为定点整数取值。
+        """
+        max_v = torch.maximum(x.real.amax(-1), x.imag.amax(-1))
+        min_v = torch.minimum(x.real.amin(-1), x.imag.amin(-1))
+        max_value = torch.maximum(max_v, min_v.abs() - 1)   # 恒 >= 0
+        # 对整数 v>0，frexp 给出 v = f * 2^k，f∈[0.5,1)，k = floor(log2(v)) + 1；v=0 时 k=0
+        _, raw_exp = torch.frexp(max_value)
+        return (raw_exp - self.iq_width + 1).clamp(0, self.max_exponent).to(torch.int32)
 
     def compress(self, x: torch.Tensor) -> CompressedIQ:
         e = self.exponent(x)

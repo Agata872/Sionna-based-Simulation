@@ -10,3 +10,6 @@ __pycache__/
 
 # 仿真输出
 results/
+
+# 参考资料（版权文档，不纳入 git）
+*.pdf

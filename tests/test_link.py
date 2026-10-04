@@ -79,6 +79,16 @@ class TestLink(unittest.TestCase):
             self.assertEqual(stats.block_errors.sum(), 0, cat)
             self.assertLess(stats.evm_percent.max(), 10.0)
 
+    def test_all_compression_methods_decode(self):
+        for method, w in (("block_scaling", 9), ("mu_law", 8)):
+            comp = CompressionConfig(method, w)
+            for cat in ("A", "B"):
+                sionna.phy.config.seed = 1
+                sim = ORANDownlink(small_config(category=cat, uplane=comp, bfw=comp))
+                stats = sim.run_batch(4, 30.0)
+                self.assertEqual(stats.block_errors.sum(), 0, f"{method} Cat {cat}")
+                self.assertGreater(sim.fronthaul_stats()["uplane"].sqnr_db, 35.0)
+
     def test_time_domain_matches_frequency_domain(self):
         evm = {}
         for domain in ("freq", "time"):
