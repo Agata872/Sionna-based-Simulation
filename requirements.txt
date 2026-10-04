@@ -1,23 +1,40 @@
-# Sionna 仿真环境锁定版本（Python 3.12，Ubuntu 24.04，NVIDIA 驱动 535）
+# Sionna 仿真环境锁定版本（Python 3.12，Ubuntu 24.04，NVIDIA 驱动 535 + 580 用户态库，见 README）
 # 复现：python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
 # torch 必须用 CUDA 12.6 构建（+cu126），PyPI 默认的 CUDA 13 构建需要驱动 >= 580
 --extra-index-url https://download.pytorch.org/whl/cu126
 
+asttokens==3.0.2
+comm==0.2.3
 contourpy==1.4.0
 cuda-bindings==12.9.7
 cuda-pathfinder==1.6.0
 cuda-toolkit==12.6.3
 cycler==0.12.1
+debugpy==1.8.22
+drjit==1.5.0
+executing==2.2.1
 filelock==3.32.3
 fonttools==4.66.1
 fsspec==2026.7.0
 h5py==3.16.0
 importlib_resources==7.1.0
+ipydatawidgets==4.3.5
+ipykernel==7.4.0
+ipython==9.17.1
+ipython_pygments_lexers==1.1.1
+ipywidgets==8.1.9
+jedi==0.20.0
 Jinja2==3.1.6
+jupyter_client==8.10.0
+jupyter_core==5.9.1
+jupyterlab_widgets==3.0.17
 kiwisolver==1.5.1
 MarkupSafe==3.0.3
 matplotlib==3.11.2
+matplotlib-inline==0.2.2
+mitsuba==3.9.1
 mpmath==1.3.0
+nest-asyncio2==1.7.3
 networkx==3.6.1
 numpy==2.5.3
 nvidia-cublas-cu12==12.6.4.1
@@ -36,14 +53,31 @@ nvidia-nvjitlink-cu12==12.9.86
 nvidia-nvshmem-cu12==3.4.5
 nvidia-nvtx-cu12==12.6.77
 packaging==26.3
+parso==0.8.7
+pexpect==4.9.0
 pillow==12.3.0
+platformdirs==4.12.2
+prompt_toolkit==3.0.53
+psutil==7.2.2
+ptyprocess==0.7.0
+pure_eval==0.2.4
+Pygments==2.21.0
 pyparsing==3.3.3
 python-dateutil==2.9.0.post0
+pythreejs==2.4.2
+pyzmq==27.2.0
 scipy==1.18.1
 setuptools==78.1.0
-sionna-no-rt==2.2.0
+sionna==2.2.0
+sionna-rt==2.2.0
 six==1.17.0
+stack-data==0.6.3
 sympy==1.14.0
 torch==2.14.1+cu126
+tornado==6.5.10
+traitlets==5.16.1
+traittypes==0.2.3
 triton==3.8.0
 typing_extensions==4.16.0
+wcwidth==0.9.1
+widgetsnbextension==4.0.16

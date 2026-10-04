@@ -11,10 +11,10 @@
   3. 链路级 Sionna PHY：5G LDPC + 16-QAM + AWGN，每块 GPU 各跑一次
   4. torch.compile 加速的蒙特卡洛 BER 仿真（sim_ber）
   5. 系统级 Sionna SYS：PHY 抽象 + 内环链路自适应
-
-注：本环境安装的是 sionna-no-rt，不含射线追踪模块 Sionna RT。
+  6. 射线追踪 Sionna RT：在 GPU 上计算街道场景中的传播路径
 """
 
+import re
 import sys
 import time
 import traceback
@@ -42,7 +42,8 @@ def check_versions():
     import torch
 
     print(f"{'python':<14}{sys.version.split()[0]}")
-    for pkg in ("torch", "sionna-no-rt", "numpy", "scipy", "matplotlib", "h5py"):
+    for pkg in ("torch", "sionna", "sionna-rt", "mitsuba", "drjit",
+                "numpy", "scipy", "matplotlib", "h5py"):
         print(f"{pkg:<14}{version(pkg)}")
     print(f"torch 编译时的 CUDA 版本：{torch.version.cuda}")
     # 本机驱动为 535（最高支持 CUDA 12.2），CUDA 13 构建的 torch 无法使用 GPU
@@ -172,6 +173,49 @@ def check_sys():
     assert (bits[harq == 0] == 0).all(), "译码失败的传输块不应计入比特数"
 
 
+def loaded_library(name):
+    """返回当前进程已加载的共享库（文件名以 name 开头）的完整路径。"""
+    with open("/proc/self/maps") as f:
+        for line in f:
+            path = line.split()[-1]
+            if path.rsplit("/", 1)[-1].startswith(name):
+                return path
+    return None
+
+
+def check_rt():
+    import numpy as np
+    import torch
+    import mitsuba as mi
+    import sionna.rt
+    from sionna.rt import load_scene, Transmitter, Receiver, PlanarArray, PathSolver, \
+        subcarrier_frequencies
+
+    # 535 驱动自带的 OptiX 不支持 Dr.Jit 1.5 生成的 copysign 指令，一做射线追踪进程就会崩溃，
+    # 所以先确认加载的是 580 用户态库（source env.sh 或 VS Code 读取 .env 后才会生效）
+    torch.cuda.init()
+    libcuda = loaded_library("libcuda.so")
+    print(f"libcuda：{libcuda}")
+    match = re.search(r"libcuda\.so\.(\d+)\.", libcuda or "")
+    assert match and int(match.group(1)) >= 580, \
+        "加载的不是 580 用户态库，请先 source env.sh（见 README 注意事项 2）"
+    print(f"Mitsuba 变体：{mi.variant()}")
+    assert mi.variant().startswith("cuda"), "Sionna RT 没有使用 GPU 后端"
+
+    scene = load_scene(sionna.rt.scene.simple_street_canyon)
+    scene.tx_array = PlanarArray(num_rows=1, num_cols=1, pattern="tr38901", polarization="V")
+    scene.rx_array = PlanarArray(num_rows=1, num_cols=1, pattern="dipole", polarization="V")
+    scene.add(Transmitter("bs", position=[-60, 0, 30]))
+    for i in range(50):
+        scene.add(Receiver(f"ut{i}", position=[-40 + 2 * i, 5, 1.5]))
+    paths = PathSolver()(scene, max_depth=8, refraction=False)
+    h = paths.cfr(frequencies=subcarrier_frequencies(64, 30e3), out_type="numpy")
+    gain_db = 10 * np.log10(np.mean(np.abs(h) ** 2, axis=(1, 2, 3, 4, 5)))
+    print(f"OptiX：{loaded_library('libnvoptix.so')}")
+    print(f"50 个接收机的信道增益：{gain_db.min():.1f} ~ {gain_db.max():.1f} dB")
+    assert np.isfinite(gain_db).all(), "部分接收机没有找到传播路径"
+
+
 def main():
     import torch
 
@@ -181,6 +225,7 @@ def main():
         run_check(f"3. 链路级 Sionna PHY（cuda:{i}）", check_phy, f"cuda:{i}")
     run_check("4. torch.compile 加速的 BER 仿真", check_compile)
     run_check("5. 系统级 Sionna SYS", check_sys)
+    run_check("6. 射线追踪 Sionna RT（GPU）", check_rt)
 
     print("\n" + "=" * 60)
     for name, ok, dt in RESULTS:
