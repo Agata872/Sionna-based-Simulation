@@ -1,0 +1,5 @@
+{
+    // 源代码管理中只显示本项目，不显示 sionna 及其 sionna-rt 子模块
+    "git.detectSubmodules": false,
+    "git.autoRepositoryDetection": false
+}
