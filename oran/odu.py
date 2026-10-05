@@ -48,32 +48,48 @@ class ODU:
     def __init__(self, cfg: ORANConfig, pdsch_configs: List[PDSCHConfig], resource_grid,
                  precision=None, device=None):
         self.cfg = cfg
+        self.precision = precision
         self.device = device
         self.resource_grid = resource_grid
         self.binary_source = BinarySource(precision=precision, device=device)
-        self.tb_encoders, self.mappers, self.layer_mappers = [], [], []
-        for pc in pdsch_configs:
-            n_id = pc.carrier.n_cell_id if pc.tb.n_id is None else pc.tb.n_id
-            num_bits_per_symbol = int(_scalar(pc.tb.num_bits_per_symbol))
-            self.tb_encoders.append(TBEncoder(
-                target_tb_size=pc.tb_size,
-                num_coded_bits=pc.num_coded_bits,
-                target_coderate=float(_scalar(pc.tb.target_coderate)),
-                num_bits_per_symbol=num_bits_per_symbol,
-                num_layers=pc.num_layers,
-                n_rnti=pc.n_rnti,
-                n_id=n_id,
-                channel_type="PDSCH",
-                codeword_index=0,
-                precision=precision,
-                device=device,
-            ))
-            self.mappers.append(Mapper("qam", num_bits_per_symbol, precision=precision, device=device))
-            self.layer_mappers.append(LayerMapper(num_layers=pc.num_layers, precision=precision,
-                                                  device=device))
-        self.tb_sizes = [enc.tb_size for enc in self.tb_encoders]
+        self._codewords = {}            # (UE 序号, MCS 表, MCS) -> (TBEncoder, Mapper, LayerMapper)
+        self.set_pdsch_configs(pdsch_configs)
         self.rg_mapper = ResourceGridMapper(resource_grid, precision=precision, device=device)
         self.prg_of_sc = subcarrier_to_prg(cfg.num_prb, cfg.prg_num_prb)
+
+    def _build_codeword(self, pc: PDSCHConfig):
+        n_id = pc.carrier.n_cell_id if pc.tb.n_id is None else pc.tb.n_id
+        num_bits_per_symbol = int(_scalar(pc.tb.num_bits_per_symbol))
+        encoder = TBEncoder(
+            target_tb_size=pc.tb_size,
+            num_coded_bits=pc.num_coded_bits,
+            target_coderate=float(_scalar(pc.tb.target_coderate)),
+            num_bits_per_symbol=num_bits_per_symbol,
+            num_layers=pc.num_layers,
+            n_rnti=pc.n_rnti,
+            n_id=n_id,
+            channel_type="PDSCH",
+            codeword_index=0,
+            precision=self.precision,
+            device=self.device,
+        )
+        mapper = Mapper("qam", num_bits_per_symbol, precision=self.precision, device=self.device)
+        layer_mapper = LayerMapper(num_layers=pc.num_layers, precision=self.precision,
+                                   device=self.device)
+        return encoder, mapper, layer_mapper
+
+    def set_pdsch_configs(self, pdsch_configs: List[PDSCHConfig]) -> None:
+        """设置各 UE 的 PDSCH 配置。链路自适应改变 MCS 时调用；编码链按 (UE, MCS 表, MCS) 缓存。"""
+        self.codeword_keys = [(k, int(_scalar(pc.tb.mcs_table)), int(_scalar(pc.tb.mcs_index)))
+                              for k, pc in enumerate(pdsch_configs)]
+        for key, pc in zip(self.codeword_keys, pdsch_configs):
+            if key not in self._codewords:
+                self._codewords[key] = self._build_codeword(pc)
+        codewords = [self._codewords[key] for key in self.codeword_keys]
+        self.tb_encoders = [c[0] for c in codewords]
+        self.mappers = [c[1] for c in codewords]
+        self.layer_mappers = [c[2] for c in codewords]
+        self.tb_sizes = [enc.tb_size for enc in self.tb_encoders]
 
     def high_phy(self, batch_size: int):
         """信道编码、调制、层映射、RE 映射。返回 (bits, x_data, x_layers)。"""

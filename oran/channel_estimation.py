@@ -13,6 +13,11 @@ Sionna 自带的估计器在整个带宽上插值，会把相邻 PRG 的 DMRS �
    ρ_{s'} 为同组端口与本端口的导频比值（由 DMRS 配置已知）。
 2. 插值（:class:`PRGLinearInterpolator`）：频域在 PRG 内相邻导频间线性插值、两端常数外推；
    时域在 DMRS 符号间线性插值、两端常数外推。
+3. 定时偏差（平均时延）补偿：若主要能量相对 FFT 窗口有时延 τ，信道带有线性相位 e^{-j2πkΔf·τ}，
+   τ ≈ 1 µs 时每个子载波旋转约 0.19 rad，上面的局部线性模型和线性插值都跟不上（射线追踪信道中
+   首径很弱、强径晚到时会出现）。先用同端口、同符号、同 PRG 且 OCC 相位相同的导频对
+   （Type 1 相隔 4 个子载波）的相关估计每个 UE 的相位斜率，把接收网格去旋转后再做 1、2，
+   最后把估计结果旋转回去。相当于 UE 按 DMRS 微调 FFT 窗口位置。
 """
 
 import numpy as np
@@ -120,11 +125,12 @@ class DMRSChannelEstimator(PUSCHLSChannelEstimator):
     :param prg_num_sc: 每个 PRG 的子载波数
     :param window: 估计每个导频时使用的邻近导频数（同一 PRG、同一 DMRS 符号、同一 CDM 组内）。
         窗口越大噪声越小，但信道曲率带来的偏差越大
+    :param delay_compensation: 是否先估计并补偿定时偏差（平均时延）带来的线性相位
     """
 
     def __init__(self, resource_grid, dmrs_length: int, dmrs_additional_position: int,
                  num_cdm_groups_without_data: int, prg_num_sc: int, window: int = 6,
-                 precision=None, device=None):
+                 delay_compensation: bool = True, precision=None, device=None):
         interpolator = PRGLinearInterpolator(resource_grid.pilot_pattern, prg_num_sc,
                                              precision=precision, device=device)
         super().__init__(resource_grid, dmrs_length, dmrs_additional_position,
@@ -156,6 +162,7 @@ class DMRSChannelEstimator(PUSCHLSChannelEstimator):
         idx = np.tile(np.arange(num_pilots)[None, :, None], [len(p), 1, window])
         wgt = np.zeros([len(p), num_pilots, window], complex)
         noise_gain = np.zeros([len(p), num_pilots])
+        pairs = []                      # 相位斜率估计用的导频对 (端口, 导频 n, 导频 m, 子载波间隔)
         for u in range(len(p)):
             safe = np.where(valid[u], p[u], 1)
             # 同一 CDM 组的其他端口及其（时域平均后的）导频比值 ρ
@@ -171,7 +178,12 @@ class DMRSChannelEstimator(PUSCHLSChannelEstimator):
                 on_sym = np.flatnonzero(valid[u] & (sym == d))
                 for start in range(0, sc.max() + 1, prg_num_sc):
                     group = on_sym[(sc[on_sym] >= start) & (sc[on_sym] < start + prg_num_sc)]
-                    for n in group:
+                    for i, n in enumerate(group):
+                        # 右侧最近的、同 CDM 组各端口导频比值都相同的导频
+                        for m in group[i + 1:]:
+                            if all(abs(rho[m] - rho[n]) < 1e-6 for rho in rhos):
+                                pairs.append((u, n, m, sc[m] - sc[n]))
+                                break
                         dist = np.abs(sc[group] - sc[n])
                         taps = group[np.argsort(dist, kind="stable")[:window]]
                         x = (sc[taps] - sc[n]) / 12.0
@@ -198,12 +210,46 @@ class DMRSChannelEstimator(PUSCHLSChannelEstimator):
         self._noise_gain = torch.as_tensor(noise_gain.reshape(shape), dtype=self.dtype, device=dev)
         self._window = window
 
-    def estimate_at_pilot_locations(self, y_pilots: torch.Tensor, no: torch.Tensor):
-        # y_pilots: [B, R, Ra, T, S, P]
+        # 只用间隔最小的导频对（各对间隔相同，相关可以直接累加）
+        self._delay_compensation = delay_compensation and len(pairs) > 0
+        if self._delay_compensation:
+            pairs = np.array(pairs)
+            dk = pairs[:, 3].min()
+            pairs = pairs[pairs[:, 3] == dk]
+            self._pair_u = torch.as_tensor(pairs[:, 0], device=dev)
+            self._pair_n = torch.as_tensor(pairs[:, 1], device=dev)
+            self._pair_m = torch.as_tensor(pairs[:, 2], device=dev)
+            self._pair_dk = float(dk)
+            num_sc = mask.shape[-1]
+            self._sc_centered = torch.arange(num_sc, dtype=self.dtype, device=dev) - (num_sc - 1) / 2
+
+    def _ls_at_pilots(self, y_pilots: torch.Tensor) -> torch.Tensor:
+        """导频处的 LS 值 y/p（双符号 DMRS 时先做时域 OCC 解扩），[B, R, Ra, T, S, P]。"""
         safe = torch.where(self._valid, self._pilots, torch.ones_like(self._pilots))
         z = torch.where(self._valid, y_pilots / safe, torch.zeros_like(y_pilots))
         if self._dmrs_length == 2:
             z = (z + z.index_select(-1, self._partner)) / 2
+        return z
+
+    def phase_slope(self, y: torch.Tensor) -> torch.Tensor:
+        """每个 UE 的信道相位斜率 [B, R]（rad / 子载波），对应时延 τ = −斜率 / (2πΔf)。"""
+        z = self._ls_at_pilots(self._extract_pilots(y)).flatten(3, 4)      # [B, R, Ra, T·S, P]
+        a = z[:, :, :, self._pair_u, self._pair_m]
+        b = z[:, :, :, self._pair_u, self._pair_n]
+        corr = (a * b.conj()).sum(dim=(2, 3))
+        return torch.angle(corr) / self._pair_dk
+
+    def call(self, y: torch.Tensor, no: torch.Tensor):
+        if not self._delay_compensation:
+            return super().call(y, no)
+        slope = self.phase_slope(y)                                         # [B, R]
+        rot = torch.polar(torch.ones_like(slope)[..., None], -slope[..., None] * self._sc_centered)
+        h_hat, err_var = super().call(y * rot[:, :, None, None, :], no)
+        return h_hat * rot.conj()[:, :, None, None, None, None, :], err_var
+
+    def estimate_at_pilot_locations(self, y_pilots: torch.Tensor, no: torch.Tensor):
+        # y_pilots: [B, R, Ra, T, S, P]
+        z = self._ls_at_pilots(y_pilots)
         lead = z.shape[:3]
         taps = z.gather(-1, self._tap_idx.expand(*lead, *self._tap_idx.shape))
         taps = taps.unflatten(-1, (-1, self._window))

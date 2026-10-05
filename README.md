@@ -58,7 +58,8 @@ sionna.phy.config.seed = 42
 ## O-RAN 7.2x 下行链路仿真
 
 `oran/` 基于 Sionna PHY 实现了 O-RAN 7.2x 划分下的 PDSCH 下行链路（单小区、2 个 UE 的 MU-MIMO），
-包括 Category A（预编码在 O-DU）和 Category B（预编码在 O-RU），以及前传 IQ 压缩（BFP）。
+包括 Category A（预编码在 O-DU）和 Category B（预编码在 O-RU），以及前传 IQ 压缩（BFP / 块缩放 / μ 律）。
+闭环模式用 Sionna RT 对物理场景（默认 munich）射线追踪，UE 随机撒点，按 CQI 选 MCS（含 OLLA）后下行传输。
 设计、配置与扩展方法见 [oran/README.md](oran/README.md)。
 
 ```bash

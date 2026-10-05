@@ -23,6 +23,37 @@ class CompressionConfig:
 
 
 @dataclass
+class RTConfig:
+    """Sionna RT 射线追踪场景（channel_model="rt" 时使用），见 :mod:`oran.rt_channel`。
+
+    默认：munich 场景，1 个 O-RU 架在 26 m 高的楼顶（抱杆 4 m），扇区朝北、下倾约 11°，
+    覆盖北侧广场和几条街道；UE 在覆盖区内随机撒点（室外，高 1.5 m）。
+    """
+
+    scene: str = "munich"               # Sionna 内置场景名，或 Mitsuba XML 场景文件路径
+    oru_positions: List[List[float]] = field(default_factory=lambda: [[8.5, 21.0, 30.0]])
+    oru_look_at: List[List[float]] = field(default_factory=lambda: [[8.5, 171.0, 1.5]])
+
+    # ---- 链路预算（默认值参考 TR 38.901 表 7.8-1 的 UMi：20 MHz 35 dBm，UE 噪声系数 9 dB）----
+    tx_power_dbm: float = 35.0          # 每个 O-RU 的总发射功率（所有天线、整个载波带宽）
+    noise_figure_db: float = 9.0        # UE 噪声系数
+    temperature: float = 290.0          # K
+
+    # ---- 射线追踪 ----
+    max_depth: int = 3                  # 最大反射/绕射次数
+    diffraction: bool = True
+    samples_per_src: int = 1_000_000
+
+    # ---- 撒点 ----
+    ue_height: float = 1.5
+    drop_min_dist: float = 10.0         # 与 O-RU 的距离范围 [m]
+    drop_max_dist: float = 250.0
+    drop_min_path_gain_db: float = -135.0   # 覆盖门限：单阵元方向图下的路径增益
+    coverage_cell_size: float = 2.0     # 撒点用覆盖图的栅格 [m]
+    coverage_samples: int = 10_000_000
+
+
+@dataclass
 class ORANConfig:
     """O-RAN 7.2x 下行链路级仿真配置（默认：单小区、1 个 O-RU、2 个 UE 的 MU-MIMO）。"""
 
@@ -69,6 +100,10 @@ class ORANConfig:
     fft_size: Optional[int] = None      # 时域 IFFT 点数，None 时取不小于 num_sc/0.85 的最小 2 的幂
 
     # ---- 信道 ----
+    # "cdl"：每个 (UE, O-RU) 一条 3GPP CDL 链路，链路增益归一化，扫描 SNR；
+    # "rt"：Sionna RT 射线追踪（rt 中的场景与链路预算），SNR 由 UE 位置决定，只支持频域仿真
+    channel_model: str = "cdl"
+    rt: RTConfig = field(default_factory=RTConfig)
     cdl_model: str = "C"
     delay_spread: float = 100e-9        # s
     ue_speed: float = 0.0               # m/s（最大速度，在 [0, ue_speed] 内均匀取值）
@@ -78,6 +113,7 @@ class ORANConfig:
     # ---- UE 接收机 ----
     channel_estimation: str = "ls"      # "ls"：DMRS LS + PRG 内线性插值；"perfect"：理想信道
     ce_window: int = 6                  # LS 估计时每个导频使用的邻近导频数（PRG 内局部线性拟合）
+    ce_delay_compensation: bool = True  # LS 估计前先补偿定时偏差（平均时延）带来的线性相位
 
     # ---- 其他 ----
     device: Optional[str] = None        # None 时使用 sionna.phy.config.device
@@ -126,6 +162,15 @@ class ORANConfig:
             raise ValueError("category 必须为 'A' 或 'B'")
         if self.domain not in ("freq", "time"):
             raise ValueError("domain 必须为 'freq' 或 'time'")
+        if self.channel_model not in ("cdl", "rt"):
+            raise ValueError("channel_model 必须为 'cdl' 或 'rt'")
+        if self.channel_model == "rt":
+            if self.domain != "freq":
+                raise ValueError("射线追踪信道暂只支持频域仿真（domain='freq'）")
+            if len(self.rt.oru_positions) != self.num_oru or len(self.rt.oru_look_at) != self.num_oru:
+                raise ValueError("rt.oru_positions / rt.oru_look_at 的个数必须等于 num_oru")
+            if self.link_gain_db is not None:
+                raise ValueError("射线追踪信道的大尺度增益由场景决定，link_gain_db 必须为 None")
         if self.precoder not in ("bd", "ezf", "rzf"):
             raise ValueError("precoder 必须为 'bd'、'ezf' 或 'rzf'")
         if self.channel_estimation not in ("ls", "perfect"):

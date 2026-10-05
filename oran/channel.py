@@ -6,6 +6,8 @@ BS 阵列的方位角（bs_orientation 的 yaw），相当于把 UE 放到不同
 
 输出张量的轴约定与 Sionna 一致：num_rx = UE 数，num_tx = O-RU 数。
 信道按链路逐样本归一化，使每对收发天线的平均功率为 1，再乘以大尺度增益 link_gain_db。
+
+channel_model="rt" 时改用 Sionna RT 射线追踪（:mod:`oran.rt_channel`），信道含链路预算，噪声方差为 1。
 """
 
 from dataclasses import dataclass
@@ -111,10 +113,14 @@ class DownlinkChannel:
         self.cfg = cfg
         self.rg = resource_grid
         self.air = air
-        self.model = MultiLinkCDL(cfg, precision=precision, device=device)
         self.frequencies = subcarrier_frequencies(resource_grid.fft_size,
                                                   resource_grid.subcarrier_spacing,
                                                   precision=precision, device=device)
+        if cfg.channel_model == "rt":
+            from .rt_channel import RTChannel             # 只有用到时才加载 Mitsuba / Sionna RT
+            self.model = RTChannel(cfg, self.frequencies, device=device)
+        else:
+            self.model = MultiLinkCDL(cfg, precision=precision, device=device)
         self.prg_centers = prg_center_subcarriers(cfg.num_prb, cfg.prg_num_prb)
         if cfg.domain == "freq":
             self.apply_ofdm = ApplyOFDMChannel(precision=precision, device=device)
@@ -126,8 +132,17 @@ class DownlinkChannel:
             self.apply_time = ApplyTimeChannel(air.resource_grid.num_time_samples, self.l_tot,
                                                precision=precision, device=device)
 
+    def set_ue_positions(self, positions) -> None:
+        """射线追踪信道：放置 UE（[K, 3]，单位 m）并做射线追踪。"""
+        if self.cfg.channel_model != "rt":
+            raise ValueError("只有射线追踪信道（channel_model='rt'）才有 UE 位置")
+        self.model.set_ue_positions(positions)
+
     def sample(self, batch_size: int) -> ChannelState:
         rg = self.rg
+        if self.cfg.channel_model == "rt":
+            # 静止 UE：同一位置的信道在各时隙（批次样本）、各符号上相同
+            return ChannelState(self.model.ofdm_channel(rg.num_ofdm_symbols, batch_size))
         if self.cfg.domain == "freq":
             # 每个 OFDM 符号采样一次（符号内信道不变，无 ICI）
             a, tau = self.model(batch_size, rg.num_ofdm_symbols, 1 / rg.ofdm_symbol_duration)

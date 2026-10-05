@@ -4,14 +4,14 @@ SNR 定义：每个 RE 的总发射功率为 1（所有 O-RU 所有天线之和�
 SNR = 1 / N0，N0 为每根接收天线每个 RE 的噪声方差。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import torch
 from sionna.phy import config as sionna_config
 
-from .channel import DownlinkChannel
+from .channel import ChannelState, DownlinkChannel
 from .config import ORANConfig
 from .fronthaul import CodecStats, FronthaulLink, fronthaul_rate
 from .odu import ODU
@@ -86,10 +86,43 @@ class ORANDownlink:
                               precision=precision, device=device)
         # CSI 参考符号：第一个 DMRS 符号
         self.csi_symbol = self.pdsch_configs[0].dmrs_symbol_indices[0]
+        self.mcs = [cfg.mcs_of(k) for k in range(cfg.num_ue)]
 
     @property
     def tb_sizes(self) -> List[int]:
         return self.odu.tb_sizes
+
+    def supported_mcs(self) -> List[int]:
+        """Sionna 编码链能实现的 MCS（当前 MCS 表、当前资源分配）。
+
+        Sionna 的 LDPC 编码器不支持重复编码：码率低于 1/5、或选到 BG1 而码率低于 1/3 的 MCS 无法实现
+        （3GPP 在循环缓冲速率匹配中重复母码）。逐个尝试建立 UE 0 的编码链，成功的同时被缓存。
+        """
+        from .bler_model import MCS_TABLE_SIZES
+        supported = []
+        for m in range(MCS_TABLE_SIZES[self.cfg.mcs_table]):
+            pc = make_pdsch_configs(replace(self.cfg, mcs_index=m))[0]
+            key = (0, self.cfg.mcs_table, m)
+            try:
+                if key not in self.odu._codewords:
+                    self.odu._codewords[key] = self.odu._build_codeword(pc)
+                supported.append(m)
+            except ValueError:
+                pass
+        return supported
+
+    def set_mcs(self, mcs_index: Sequence[int]) -> None:
+        """改变各 UE 的 MCS（链路自适应），之后的 run_batch 按新 MCS 编码和译码。
+
+        MCS 表不变（cfg.mcs_table）；各 MCS 的编译码链首次用到时建立并缓存。
+        """
+        mcs = [int(m) for m in mcs_index]
+        if mcs == self.mcs:
+            return
+        self.pdsch_configs = make_pdsch_configs(replace(self.cfg, mcs_index=mcs))
+        self.odu.set_pdsch_configs(self.pdsch_configs)
+        self.ue.set_codewords(self.odu)
+        self.mcs = mcs
 
     def fronthaul_stats(self) -> Dict[str, CodecStats]:
         """所有 O-RU 链路合并后的压缩统计。"""
@@ -110,13 +143,18 @@ class ORANDownlink:
             fh.reset_stats()
 
     @torch.no_grad()
-    def run_batch(self, batch_size: int, snr_db: float, stats: Optional[LinkStats] = None
-                  ) -> LinkStats:
+    def run_batch(self, batch_size: int, snr_db: float, stats: Optional[LinkStats] = None,
+                  state: Optional[ChannelState] = None) -> LinkStats:
+        """仿真一个批次（batch_size 个时隙）。
+
+        :param state: 给定的信道实现（如闭环仿真中已用于计算 CQI 的射线追踪信道），None 时重新采样
+        """
         cfg = self.cfg
         stats = stats or LinkStats(cfg.num_ue)
         no = 10 ** (-snr_db / 10)
 
-        state = self.channel.sample(batch_size)
+        if state is None:
+            state = self.channel.sample(batch_size)
         h_csi = self.channel.csi(state, self.csi_symbol)
         tx = self.odu(batch_size, h_csi)
 
