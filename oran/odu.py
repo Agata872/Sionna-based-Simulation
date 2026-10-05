@@ -2,7 +2,7 @@
 
 处理链（每个 UE 一个码字）：
     TB CRC -> 码块分割 + CB CRC -> LDPC 编码 -> 速率匹配 -> 加扰（PDSCH）    [TBEncoder]
-    -> 调制 -> 层映射 -> RE 映射（数据 + DMRS）
+    -> 调制 -> 层映射 -> RE 映射（数据 + DMRS；测量时隙另放 CSI-RS / CSI-IM，见 csi_rs.py）
     -> Cat A：预编码 -> 前传发送 N_TRX 路天线端口流
        Cat B：前传发送 L 路层流 + C-plane 预编码权值
 
@@ -110,8 +110,14 @@ class ODU:
         return compute_precoder(h_csi, self.cfg.num_layers_per_ue, self.cfg.precoder,
                                 self.cfg.rzf_alpha)
 
-    def __call__(self, batch_size: int, h_csi: torch.Tensor) -> ODUOutput:
+    def __call__(self, batch_size: int, h_csi: torch.Tensor, csi_rs=None) -> ODUOutput:
+        """
+        :param csi_rs: 测量时隙时为 :class:`~oran.csi_rs.CSIRS`：在层资源网格中放入 CSI-RS / CSI-IM
+            （PDSCH 在这些 RE 上打孔），之后与 PDSCH 一起预编码（Cat A）或经前传送往 O-RU（Cat B）
+        """
         bits, x_data, x_layers = self.high_phy(batch_size)
+        if csi_rs is not None:
+            x_layers = csi_rs.insert(x_layers)
         w = self.precoder(h_csi)
         n = self.cfg.num_oru_ant
         uplane, weights = [], []

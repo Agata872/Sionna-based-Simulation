@@ -12,7 +12,7 @@ import torch
 from sionna.phy import config as sionna_config
 
 from .channel import ChannelState, DownlinkChannel
-from .config import ORANConfig
+from .config import CompressionConfig, ORANConfig
 from .fronthaul import CodecStats, FronthaulLink, fronthaul_rate
 from .odu import ODU
 from .oru import ORU, make_air_numerology
@@ -142,6 +142,50 @@ class ORANDownlink:
         for fh in self.fronthaul:
             fh.reset_stats()
 
+    def _transmit(self, batch_size: int, no: float, state: ChannelState, csi_rs=None,
+                  stats: Optional[LinkStats] = None):
+        """O-DU -> 前传 -> O-RU -> 信道。返回 (O-DU 输出, 接收信号, 各 O-RU 实际使用的权值)。
+
+        :param csi_rs: 测量时隙时为 :class:`~oran.csi_rs.CSIRS`（CSI-RS 与 PDSCH 一起经前传发送）
+        :param stats: 给定时累加发射 EVM（O-RU 天线口相对理想前传的误差）
+        """
+        cfg = self.cfg
+        h_csi = self.channel.csi(state, self.csi_symbol)
+        tx = self.odu(batch_size, h_csi, csi_rs=csi_rs)
+
+        # 前传 + O-RU
+        grids, w_applied = [], []
+        n = cfg.num_oru_ant
+        for o in range(cfg.num_oru):
+            uplane_hat, w_hat = self.fronthaul[o].transmit(tx.uplane[o], tx.weights[o])
+            grid = self.orus[o].frequency_domain(uplane_hat, w_hat)
+            if stats is not None:
+                ideal = apply_precoder(tx.x_layers, tx.w[:, :, o * n:(o + 1) * n], self.odu.prg_of_sc)
+                stats.tx_err += float(((grid - ideal).abs() ** 2).sum())
+                stats.tx_ref += float((ideal.abs() ** 2).sum())
+            grids.append(self.orus[o].to_air(grid))
+            w_applied.append(w_hat if w_hat is not None else tx.w[:, :, o * n:(o + 1) * n])
+        x = torch.stack(grids, dim=1)                       # [B, num_oru, N_TRX, ...]
+        return tx, self.channel(x, state, no), w_applied
+
+    @torch.no_grad()
+    def measurement_slot(self, state: ChannelState, snr_db: float, csi_rs) -> torch.Tensor:
+        """CSI 测量时隙：PDSCH（打孔）+ CSI-RS / CSI-IM 经前传、O-RU、信道到达 UE。
+
+        用 state 中第一个样本的信道发送一个时隙，返回 UE 侧的频域接收网格 [1, K, N_r, num_symbols, num_sc]。
+        该时隙的 PDSCH 不译码。
+        """
+        one = ChannelState(state.h_freq[:1], None if state.h_time is None else state.h_time[:1])
+        _, y, _ = self._transmit(1, 10 ** (-snr_db / 10), one, csi_rs=csi_rs)
+        return self.ue.frequency_grid(y)
+
+    def set_compression(self, uplane: CompressionConfig, bfw: Optional[CompressionConfig] = None) -> None:
+        """更换前传压缩配置（重建各 O-RU 的前传链路，压缩统计清零）。"""
+        self.cfg.uplane = uplane
+        if bfw is not None:
+            self.cfg.bfw = bfw
+        self.fronthaul = [FronthaulLink(self.cfg, o) for o in range(self.cfg.num_oru)]
+
     @torch.no_grad()
     def run_batch(self, batch_size: int, snr_db: float, stats: Optional[LinkStats] = None,
                   state: Optional[ChannelState] = None) -> LinkStats:
@@ -155,23 +199,7 @@ class ORANDownlink:
 
         if state is None:
             state = self.channel.sample(batch_size)
-        h_csi = self.channel.csi(state, self.csi_symbol)
-        tx = self.odu(batch_size, h_csi)
-
-        # 前传 + O-RU
-        grids, w_applied = [], []
-        n = cfg.num_oru_ant
-        for o in range(cfg.num_oru):
-            uplane_hat, w_hat = self.fronthaul[o].transmit(tx.uplane[o], tx.weights[o])
-            grid = self.orus[o].frequency_domain(uplane_hat, w_hat)
-            ideal = apply_precoder(tx.x_layers, tx.w[:, :, o * n:(o + 1) * n], self.odu.prg_of_sc)
-            stats.tx_err += float(((grid - ideal).abs() ** 2).sum())
-            stats.tx_ref += float((ideal.abs() ** 2).sum())
-            grids.append(self.orus[o].to_air(grid))
-            w_applied.append(w_hat if w_hat is not None else tx.w[:, :, o * n:(o + 1) * n])
-        x = torch.stack(grids, dim=1)                       # [B, num_oru, N_TRX, ...]
-
-        y = self.channel(x, state, no)
+        tx, y, w_applied = self._transmit(batch_size, no, state, stats=stats)
 
         h_eff = None
         if cfg.channel_estimation == "perfect":

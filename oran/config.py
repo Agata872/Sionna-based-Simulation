@@ -43,6 +43,7 @@ class RTConfig:
     max_depth: int = 3                  # 最大反射/绕射次数
     diffraction: bool = True
     samples_per_src: int = 1_000_000
+    deterministic: bool = True          # PathSolver 结果可复现（不同进程间配对比较需要），开销很小
 
     # ---- 撒点 ----
     ue_height: float = 1.5
@@ -115,6 +116,12 @@ class ORANConfig:
     ce_window: int = 6                  # LS 估计时每个导频使用的邻近导频数（PRG 内局部线性拟合）
     ce_delay_compensation: bool = True  # LS 估计前先补偿定时偏差（平均时延）带来的线性相位
 
+    # ---- CSI 测量（闭环）----
+    # "csi-rs"：测量时隙中经前传发送的预编码 CSI-RS 与 CSI-IM（见 csi_rs.py）；"genie"：直接用真实等效信道
+    cqi_source: str = "csi-rs"
+    csi_rs_symbol: int = 12             # CSI-RS / CSI-IM 所在 OFDM 符号（firstOFDMSymbolInTimeDomain）
+    csi_rs_scrambling_id: Optional[int] = None   # NZP-CSI-RS 的 scramblingID，None 时取 n_cell_id
+
     # ---- 其他 ----
     device: Optional[str] = None        # None 时使用 sionna.phy.config.device
 
@@ -173,6 +180,8 @@ class ORANConfig:
                 raise ValueError("射线追踪信道的大尺度增益由场景决定，link_gain_db 必须为 None")
         if self.precoder not in ("bd", "ezf", "rzf"):
             raise ValueError("precoder 必须为 'bd'、'ezf' 或 'rzf'")
+        if self.cqi_source not in ("csi-rs", "genie"):
+            raise ValueError("cqi_source 必须为 'csi-rs' 或 'genie'")
         if self.channel_estimation not in ("ls", "perfect"):
             raise ValueError("channel_estimation 必须为 'ls' 或 'perfect'")
         if self.num_layers > self.num_tx_ant:

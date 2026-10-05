@@ -10,12 +10,13 @@ import numpy as np
 import sionna.phy
 import torch
 
-from oran import ORANConfig, ORANDownlink
+from oran import CompressionConfig, ORANConfig, ORANDownlink
 from oran.bler_model import AWGNLinkModel, mcs_entry
 from oran.csi import CQI_TABLES, CQIReporter, lmmse_sinr, reference_data_symbols, reference_num_re
 from oran.link_adaptation import LinkAdaptation, LinkAdaptationConfig
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+IDEAL = CompressionConfig("ideal", 16)
 
 
 def small_config(**kwargs):
@@ -154,6 +155,76 @@ class TestLinkPieces(unittest.TestCase):
                 self.assertAlmostEqual(slope, -2 * np.pi * 30e3 * tau, delta=1e-3)
         self.assertLess(nmse[True], 1e-3)
         self.assertGreater(nmse[False], 100 * nmse[True])
+
+
+class TestCSIRS(unittest.TestCase):
+    """测量时隙中经前传发送的 CSI-RS / CSI-IM（CDL 信道、小带宽）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        sionna.phy.config.device = DEVICE
+
+    def _setup(self, **kwargs):
+        from oran.csi_rs import CSIRS, CSIRSReceiver
+        cfg = small_config(**kwargs)
+        sim = ORANDownlink(cfg)
+        csirs = CSIRS(cfg, sim.pdsch_configs[0], device=DEVICE)
+        return cfg, sim, csirs, CSIRSReceiver(csirs, cfg.prg_num_prb, sim.ue.estimator)
+
+    def test_mapping_and_sequence(self):
+        from sionna.phy.nr.utils import generate_prng_seq
+        cfg, sim, csirs, _ = self._setup()
+        # 每 PRB：UE0 的 CMR 在子载波 0–1，UE1 在 2–3，CSI-IM 在 4–7
+        np.testing.assert_array_equal(csirs.cmr_sc[0][0, 1], [12, 13])
+        np.testing.assert_array_equal(csirs.cmr_sc[1][0, 1], [14, 15])
+        np.testing.assert_array_equal(csirs.im_sc[1], [16, 17, 18, 19])
+        self.assertEqual(csirs.overhead_re_per_prb, 8)
+        # 序列：c_init = (2^10 (14 n_s + l + 1)(2 n_ID + 1) + n_ID) mod 2^31，m' = 2n + k'
+        l, n_id = cfg.csi_rs_symbol, cfg.n_cell_id
+        c = generate_prng_seq(2 * 2 * cfg.num_prb + 4, (2 ** 10 * (l + 1) * (2 * n_id + 1) + n_id) % 2 ** 31)
+        r = ((1 - 2 * c[0::2]) + 1j * (1 - 2 * c[1::2])) / np.sqrt(2)
+        np.testing.assert_allclose(csirs.cmr_seq[0][0, 3], r[[6, 7]])
+        # fd-CDM2：端口 0 的 w_f = [+1, +1]，端口 1 为 [+1, −1]；其他层在这些 RE 上为 0
+        x = torch.ones(1, cfg.num_layers, 14, cfg.num_subcarriers, dtype=torch.complex64, device=DEVICE)
+        sym = csirs.insert(x)[0, :, l].cpu().numpy()
+        np.testing.assert_allclose(sym[0, 36:38], r[[6, 7]], atol=1e-6)
+        np.testing.assert_allclose(sym[1, 36:38], r[[6, 7]] * [1, -1], atol=1e-6)
+        np.testing.assert_allclose(sym[2:, 36:38], 0)
+        np.testing.assert_allclose(sym[:, 40:44], 0)          # CSI-IM
+        np.testing.assert_allclose(sym[:, 44:48], 1)          # 其余子载波仍是 PDSCH
+
+    def test_estimates_match_genie_with_ideal_fronthaul(self):
+        cfg, sim, csirs, rx = self._setup(uplane=IDEAL, bfw=IDEAL, mcs_table=2)
+        sionna.phy.config.seed = 3
+        state = sim.channel.sample(1)
+        snr = 30.0
+        y = sim.measurement_slot(state, snr, csirs)
+        sinr, diag = rx.sinr(y)
+        self.assertAlmostEqual(10 * np.log10(float(diag["noise"].mean())), -snr, delta=0.5)
+        w = sim.odu.precoder(sim.channel.csi(state, sim.csi_symbol))
+        h = state.stacked()[..., reference_data_symbols(sim.pdsch_configs[0]), :]
+        genie = lmmse_sinr(h, w, 10 ** (-snr / 10), sim.odu.prg_of_sc, 2)
+        model = AWGNLinkModel(device=DEVICE)
+        rep = CQIReporter(2, reference_num_re(sim.pdsch_configs[0], cfg.num_prb, 2), model)
+        cqi_rs, eff_rs = rep(sinr[0])
+        cqi_g, eff_g = rep(genie[0])
+        self.assertTrue(np.all(np.abs(cqi_rs - cqi_g) <= 1), (cqi_rs, cqi_g))
+        self.assertTrue(np.all(np.abs(eff_rs - eff_g) < 2.0), (eff_rs, eff_g))
+
+    def test_what_csi_can_see(self):
+        """CSI-IM 上看不到压缩失真（零值 RE 压缩后仍为 0）；Cat B 权值压缩的泄漏由 NZP-IMR 测到。"""
+        out = {}
+        for name, kw in (("ideal", dict(category="B", uplane=IDEAL, bfw=IDEAL)),
+                         ("a_bfp4", dict(category="A", uplane=CompressionConfig("bfp", 4))),
+                         ("b_bfw3", dict(category="B", uplane=IDEAL, bfw=CompressionConfig("bfp", 3)))):
+            cfg, sim, csirs, rx = self._setup(**kw)
+            sionna.phy.config.seed = 5
+            state = sim.channel.sample(1)
+            _, diag = rx.sinr(sim.measurement_slot(state, 40.0, csirs))
+            out[name] = {k: 10 * np.log10(v.mean().item()) for k, v in diag.items()}
+        self.assertAlmostEqual(out["a_bfp4"]["noise"], out["ideal"]["noise"], delta=0.05)
+        self.assertAlmostEqual(out["b_bfw3"]["noise"], out["ideal"]["noise"], delta=0.05)
+        self.assertGreater(out["b_bfw3"]["inr"], out["ideal"]["inr"] + 3.0)
 
 
 @unittest.skipUnless(rt_available(), "需要 Sionna RT 的 GPU 变体")

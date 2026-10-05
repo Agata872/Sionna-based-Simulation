@@ -63,7 +63,7 @@ class RTScene:
         for o, (pos, look_at) in enumerate(zip(rc.oru_positions, rc.oru_look_at)):
             self.scene.add(Transmitter(f"oru{o}", position=list(map(float, pos)),
                                        look_at=list(map(float, look_at))))
-        self.solver = PathSolver()
+        self.solver = PathSolver(deterministic=rc.deterministic)
         self.ue_positions: Optional[np.ndarray] = None
         self._coverage = None
 

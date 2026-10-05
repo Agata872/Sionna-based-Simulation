@@ -48,7 +48,8 @@ UE
 |---|---|---|---|
 | 物理环境 | 场景几何与材料、O-RU / UE 位置、天线方向图 → 每条链路的 CIR | TR 38.901 §8（射线追踪）、§7.3（阵元方向图） | `rt_channel.py`，Sionna RT 2.2（GPU） |
 | 链路预算 | 发射功率、路径增益、kTB·NF | — | SNR 由位置决定，不再扫描 |
-| L1（UE） | CSI 测量 → 宽带 CQI，reportQuantity = 'cri-RI-CQI'（非 PMI 反馈） | TS 38.214 §5.2.2.1、§5.2.2.5.1、§5.2.1.4.2 | `csi.py`，精灵测量（设计第 10 条） |
+| L1（下行） | 测量时隙：每 UE 一个预编码 NZP CSI-RS（CMR）、配对 UE 的 CMR 兼作 NZP-IMR、CSI-IM；与 PDSCH 一起经前传发送 | TS 38.211 §7.4.1.5；TS 38.214 §5.2.1.4.1、§5.2.2.3.1、§5.2.2.4、§5.1.4.2 | `csi_rs.py`（设计第 10 条） |
+| L1（UE） | CSI 测量 → 宽带 CQI，reportQuantity = 'cri-RI-CQI'（非 PMI 反馈） | TS 38.214 §5.2.2.1、§5.2.2.5.1、§5.2.1.4.2 | `csi_rs.py` 估计 + `csi.py` 算 CQI；精灵测量作对照 |
 | L1（上行） | CQI 经 UCI 上报 | TS 38.212 §6.3 | 无误码、无时延 |
 | MAC | CQI → MCS、OLLA | 3GPP 不规定算法；MCS 表见 TS 38.214 §5.1.3.1 | `link_adaptation.py` |
 | L1（下行） | DCI 1_1 指示 MCS；PDSCH | TS 38.212 §7.3.1.2.2；原有链路 | DCI 只体现为参数 |
@@ -57,20 +58,25 @@ UE
 
 ```
 撒点：覆盖区内均匀随机取室外位置 → 射线追踪 → 各 (UE, O-RU) 信道（含链路预算），UE 静止
-每个批次（若干时隙，共用一个 MCS）：
+每个 CSI-RS 周期（1 个测量时隙 + batch_size 个数据时隙，默认共 8 个时隙）：
   O-DU：由 CSI（TDD 互易，假设理想）计算 BD 预编码
-  UE：在 CSI 参考资源上算等效信道 H_k·W 的 LMMSE SINR → EESM → CQI → UCI 上报
+  测量时隙：PDSCH（在 CSI-RS / CSI-IM 处打孔）+ 预编码 CSI-RS + CSI-IM
+            → 前传（Cat A/B、压缩）→ O-RU → 信道 → UE
+  UE：CMR 估信道、NZP-IMR 估配对 UE 的干扰、CSI-IM 估噪声 → 每 PRB 的 LMMSE SINR → EESM → CQI → UCI 上报
   MAC：CQI → SINR 估计 + OLLA 偏移 → MCS → DCI
-  PDSCH：O-DU → 前传（Cat A/B、压缩）→ O-RU → 信道 → UE → CRC
+  数据时隙：PDSCH：O-DU → 前传 → O-RU → 信道 → UE → CRC
   ACK/NACK → OLLA
 ```
 
 ## 快速开始
 
+逐模块演示完整闭环流程（带开关，可切换信道、Cat A/B、压缩、SU/MU、CQI 来源等）：
+[`notebooks/closed_loop_walkthrough.ipynb`](../notebooks/closed_loop_walkthrough.ipynb)。
+
 ```bash
 cd "/home/user/Sionna-based Simulation"
 source env.sh
-python -m unittest discover -s tests -v          # 单元测试，约 40 秒
+python -m unittest discover -s tests -v          # 单元测试，约 45 秒
 python scripts/compare_cat_a_b.py --widths ideal 9 5 --snr 16 30 2 --max-batches 5   # 快速试跑
 python scripts/compare_cat_a_b.py --widths ideal 7 bs:7 mu:7 --bfw-width bs:9        # 比较压缩算法
 
@@ -87,6 +93,13 @@ python scripts/rt_closed_loop.py --drops 5 --batches 8                 # 快速�
 python scripts/rt_closed_loop.py --num-ue 1                            # SU-MIMO，30 个撒点
 python scripts/rt_closed_loop.py --num-ue 2                            # 2 UE MU-MIMO（BD）
 python scripts/rt_closed_loop.py --num-ue 2 --category B --uplane bfp:7 --bfw bfp:7 --out results/rt_mu_b7
+python scripts/rt_closed_loop.py --cqi-source genie                    # 对照：精灵 CQI（不发 CSI-RS）
+
+# 闭环中比较 Cat A/B 的压缩失真：先生成撒点文件，两块 GPU 各跑一类（同一批撒点上依次跑各压缩配置），再合并
+python scripts/rt_compare_compression.py --num-ue 2 --save-drops results/drops_mu.json
+CUDA_VISIBLE_DEVICES=0 python scripts/rt_compare_compression.py --categories A --drops-file results/drops_mu.json --out results/csi_mu_a &
+CUDA_VISIBLE_DEVICES=1 python scripts/rt_compare_compression.py --categories B --drops-file results/drops_mu.json --out results/csi_mu_b &
+wait; python scripts/rt_compare_compression.py --merge results/csi_mu_a results/csi_mu_b --out results/csi_mu
 ```
 
 在代码中使用：
@@ -134,8 +147,9 @@ print(drops[0].summary(cfg.slots_per_second))
 | O-RU | 位于 (8.5, 21, 30) m，即 26 m 楼顶加 4 m 抱杆；朝北、下倾约 11°，覆盖北侧广场和几条街道 |
 | 链路预算 | O-RU 35 dBm（20 MHz）、UE 噪声系数 9 dB（TR 38.901 表 7.8-1 的 UMi 校准值） |
 | 撒点 | 距 O-RU 10~250 m，单阵元路径增益 ≥ −135 dB，室外，UE 高 1.5 m，静止 |
-| CSI / LA | CQI 表与 MCS 表同号（脚本默认表 2）；目标 BLER 0.1；OLLA 步长 0.5 dB，范围 ±10 dB |
-| 批次 | 每批 8 个时隙共用一个 MCS；每个撒点 16 批，前 4 批（OLLA 收敛）不计入统计 |
+| CSI-RS | 符号 12；每 UE 一个 ν 端口 CMR（ν = 2 时为表 7.4.1.5.3-1 第 3 行，fd-CDM2，密度 1），用该 UE 的 BD 权值预编码；配对 UE 的 CMR 兼作 NZP-IMR；CSI-IM pattern1；powerControlOffset 0 dB；2 UE × 2 层时每 PRB 子载波 0–3 为 CMR、4–7 为 CSI-IM |
+| CSI / LA | CQI 来自 CSI-RS（`cqi_source="csi-rs"`，可改为 `"genie"`）；CQI 表与 MCS 表同号（脚本默认表 2）；目标 BLER 0.1；OLLA 步长 0.5 dB，范围 ±10 dB |
+| 周期 | CSI-RS 周期 8 个时隙 = 1 个测量时隙 + 7 个数据时隙（共用一个 MCS）；每个撒点 16 个周期，前 4 个（OLLA 收敛）不计入统计 |
 
 ## 指标
 
@@ -149,7 +163,13 @@ print(drops[0].summary(cfg.slots_per_second))
   （见 `fronthaul.py` 中头部长度的说明）。100 MHz、每层不压缩时为 3276 × 14 × 2000 × 32 = 2.93 Gbps，
   与书中数值一致。
 - **宽带 SNR（闭环）**：P_RE·mean|h|²/N0，按每根接收天线、各发射天线等功率计算，不含波束赋形和接收合并增益。
-- **吞吐量（闭环）**：warmup 之后首传成功的 TB 比特数除以时长（没有 HARQ 重传）。
+- **吞吐量（闭环）**：warmup 之后数据时隙中首传成功的 TB 比特数除以数据时隙时长（没有 HARQ 重传；测量时隙的
+  PDSCH 视为与数据时隙相同）。
+- **数据时隙实测 SINR**：数据时隙上均衡后的发送符号功率与误差功率之比，包含噪声、干扰、信道估计误差和前传失真，
+  是 PDSCH 实际经历的 SINR。CSI 测得的有效 SINR 与它之差反映 CQI 的高估量。
+- **ΔCQI**：CSI-RS 测得的 CQI 与精灵 CQI（真实等效信道、不经前传）之差。
+- **INR（NZP-IMR）**：UE 在配对 UE 的 CSI-RS 上测得的干扰功率与 CSI-IM 噪声之比（每接收天线平均）。
+- **OLLA 偏移**：收敛期之后的平均偏移，负值表示 MAC 需要把 CQI 下调这么多 dB 才能满足目标 BLER。
 
 ## 文件
 
@@ -169,9 +189,11 @@ print(drops[0].summary(cfg.slots_per_second))
 | `link.py` | 端到端仿真器 `ORANDownlink`、统计量 `LinkStats` |
 | `bler_model.py` | AWGN 链路抽象：(Qm, R, RE 数) 的 TBLER 门限、EESM |
 | `csi.py` | CQI 表、CSI 参考资源、LMMSE SINR、`CQIReporter` |
+| `csi_rs.py` | CSI-RS / CSI-IM 资源与序列（`CSIRS`），UE 侧 CMR / NZP-IMR / CSI-IM 估计（`CSIRSReceiver`） |
 | `link_adaptation.py` | `LinkAdaptation`：CQI → MCS、OLLA |
 | `closed_loop.py` | 闭环仿真器 `ClosedLoopDownlink`、逐撒点结果 `DropResult` |
 | `../scripts/rt_closed_loop.py` | 闭环仿真脚本（撒点、统计、画图） |
+| `../scripts/rt_compare_compression.py` | 闭环中 Cat A/B × 压缩配置的对比（同一批撒点），汇总、CDF、CQI 高估量 |
 
 ## 主要设计与简化
 
@@ -213,14 +235,26 @@ print(drops[0].summary(cfg.slots_per_second))
    撒点：在覆盖图范围内均匀抽点，丢弃距离或路径增益不满足门限、以及头顶有遮挡的点。覆盖图为单阵元、
    无折射，避免把 UE 撒进建筑。覆盖图是蒙特卡洛结果，每次计算略有差异，拒绝采样使同一 seed 的撒点
    基本可复现。射线追踪后路径增益比门限低 10 dB 以上的撒点会重撒（覆盖图与 PathSolver 偶有不一致）。
-10. **CQI（简化版，`csi.py`）**：对应 'cri-RI-CQI'，即 gNB 发预编码 CSI-RS、UE 在等效信道上计算 CQI，与 TDD 互易
-    BD 预编码相配。UE 不估计 CSI-RS，而是直接用真实等效信道 H_k·W 和同调度 UE 的干扰，算出每个 RE、每层的
-    LMMSE 输出 SINR（与 Sionna LMMSE 均衡器的 1/no_eff 逐 RE 一致，单元测试验证）。再经 EESM 得到有效 SINR，
-    与各 CQI 的 AWGN 门限比较，取满足 TBLER ≤ 0.1 的最大序号。
-    CQI 对应的 TBS 按 CSI 参考资源（§5.2.2.5.1）计算：符号 2~13 去掉 DMRS 符号，共 10 个数据符号；
-    实际 PDSCH 占满 14 个符号，有 12 个数据符号。
-    测量不经过前传，因此**看不到前传压缩失真**，压缩带来的损失只能由 OLLA 根据 ACK/NACK 吸收。
-    UCI 无误码、无时延；层数固定，不上报 RI。
+   PathSolver 用确定性模式（`RTConfig.deterministic`，开销很小），同一位置在不同进程中得到相同的信道。
+   覆盖图仍有蒙特卡洛差异，门限附近的个别撒点在不同进程中可能不同，跨进程配对比较时要用
+   `rt_compare_compression.py --save-drops` 生成的撒点文件。
+10. **CSI-RS 与 CQI（`csi_rs.py`、`csi.py`）**：对应 'cri-RI-CQI'，即 gNB 发预编码 CSI-RS、UE 在等效信道上计算 CQI，
+    与 TDD 互易 BD 预编码相配。
+    - 资源：每个 CSI-RS 周期的第一个时隙为测量时隙，CSI-RS / CSI-IM 都在符号 12。UE k 的 CMR 从子载波 k·ν 开始，
+      端口 i 用第 i 层的权值预编码；CSI-IM 在其后第一个 4 的倍数处。序列和 RE 映射按 TS 38.211 §7.4.1.5.2/.3，
+      单元测试中与公式逐项核对。
+    - 测量时隙的 PDSCH 在这些 RE 上打孔（规范为速率匹配），保证前传压缩块的内容真实，但不译码。
+    - 前传：Cat A 中 CSI-RS 与 PDSCH 一起在 O-DU 预编码；Cat B 中 CSI-RS 放在对应的层流里，由 O-RU 用（压缩后的）
+      权值预编码。O-RAN 中可用 reMask 区分 CSI-RS 所在的 section，端口权值可用 SE 11 / 19 下发。
+    - UE：先用 PDSCH DMRS 估计的相位斜率补偿定时；每个 PRB 由 CMR 的 2 个 RE 做 LS + CDM2 解扩，得到 N_r × ν
+      信道；CSI-IM 上的平均功率作为噪声方差；配对 UE 的端口（NZP-IMR）给出干扰协方差，在 PRG 内平均并扣除估计噪声
+      ν·σ²/2。不扣除会把 BD 零陷处的干扰高估到与噪声相当，MU 时 SINR 系统性低估约 3 dB。本 UE 信道估计中的
+      噪声不做修正（低 SNR 时 SINR 略偏高）。之后每 PRB、每层算 LMMSE SINR → EESM → CQI。
+    - 理想前传下 CSI-RS 测得的 CQI 与精灵 CQI 相差不超过 1（单元测试验证）。
+    - 精灵 CQI（`cqi_source="genie"`）：直接用真实等效信道 H_k·W 算每个 RE 的 LMMSE SINR（与 Sionna LMMSE 均衡器的
+      1/no_eff 逐 RE 一致），不经前传，作为对照始终记录。
+    - CQI 对应的 TBS 按 CSI 参考资源（§5.2.2.5.1）计算：符号 2~13 去掉 DMRS 符号，共 10 个数据符号；
+      实际 PDSCH 占满 14 个符号，有 12 个数据符号。UCI 无误码、无时延；层数固定，不上报 RI。
 11. **AWGN 门限（`bler_model.py`）**：用 Sionna SYS 的 PDSCH BLER 表（按码块长度），经 TB 分段得到 TBLER。
     表中缺少的最低几档 QPSK（SNR 低于 −5 dB），按同调制下最近的有数据条目用 Shannon 间隔外推。
     EESM 的 β 用 Sionna 的标定值。
@@ -239,6 +273,18 @@ print(drops[0].summary(cfg.slots_per_second))
     SINR 低于 MCS 3 门限（约 0.6 dB）的 UE 只能以高 BLER 运行。真实系统中靠低码率（重复）和降秩解决。
 14. **固定层数**：BD 之后，部分 UE 的等效信道接近秩 1，例如只有单一视距径、或与同调度 UE 方向相近。此时第二层
     SINR 很低，宽带 CQI 被拉低。RI 自适应可以改善（见扩展）。
+15. **前传压缩失真对 CSI 的可见性**：三种压缩算法都把值为 0 的 RE 还原为严格的 0，所以 CSI-IM 上测不到任何压缩失真；
+    失真能否进入 CQI，取决于它落在哪些 CSI-RS RE 上。
+
+    | 失真来源 | 对 PDSCH 的影响 | CSI-RS / CSI-IM 能否测到 |
+    |---|---|---|
+    | Cat A U-plane | 天线域白噪声，功率 ∝ 该 RE 上所有 UE 信号之和，BD 不能置零：自失真 + 泄漏给配对 UE | 部分：配对 UE 的 CSI-RS 的失真泄漏到本 UE，被 NZP-IMR 测到；自失真只表现为 CMR 信道估计误差 |
+    | Cat B U-plane | 层域噪声，随本 UE 权值波束赋形，在配对 UE 处被 BD 置零：只有自失真 | 基本测不到：只表现为 CMR 信道估计误差 |
+    | Cat B 权值 | BD 零陷不准，残余多用户干扰 | 能：配对 UE 的 CSI-RS 用压缩后的权值发出，NZP-IMR 直接测到 |
+
+    测不到的部分由 OLLA 根据 ACK/NACK 吸收，`rt_compare_compression.py` 中的 OLLA 偏移和"CQI 高估量"即量化这一部分。
+    另外，即使理想前传，BD 只在 PRG 中心子载波置零，PRG 内信道变化带来的残余干扰在高 SNR 时也会被 NZP-IMR 测到
+    （精灵 CQI 中同样包含）。
 
 ## 扩展
 
@@ -253,8 +299,9 @@ print(drops[0].summary(cfg.slots_per_second))
   `oru_positions`、`oru_look_at` 和撒点参数。`num_oru > 1` 时每个 O-RU 都是场景中的一个发射机，
   各链路的大尺度增益直接由场景给出（数据结构已支持，尚未验证）。
 - **闭环的升级方向**：
-  - 真实 CSI-RS：按 TS 38.211 §7.4.1.5 生成预编码 NZP CSI-RS 和 CSI-IM，经前传（Cat A/B、压缩）发送，UE 估计后
-    再算 CQI。这样 CQI 能反映前传压缩失真。
+  - 失真感知的 CQI：38.214 §5.2.1.4.1 允许 UE 把 CMR RE 上的"其他干扰"计入 CQI。2 端口、密度 1 的 CMR 每 PRB
+    只有 2 个 RE，没有自由度分离失真与信道，需要更密的测量资源或借助 TRS / DMRS 残差。
+  - 测量时隙的 PDSCH 按速率匹配生成并译码（目前打孔、不译码）。
   - RI 自适应。
   - HARQ（冗余版本 + 软合并）。
   - UE 移动（射线追踪路径的多普勒）和 CSI 上报时延。

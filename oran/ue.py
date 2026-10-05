@@ -81,14 +81,19 @@ class UEReceivers:
         self.layer_demappers = [c[1] for c in codewords]
         self.tb_decoders = [c[2] for c in codewords]
 
+    def frequency_grid(self, y: torch.Tensor) -> torch.Tensor:
+        """接收信号 -> PRB 上的频域资源网格 [B, K, N_r, num_symbols, num_sc]（时域仿真时去 CP + FFT）。"""
+        if self.demodulator is not None:
+            y = self.air.active(self.demodulator(y))
+        return y
+
     def __call__(self, y: torch.Tensor, no, h_eff: Optional[torch.Tensor] = None) -> UEOutput:
         """
         :param y: 接收信号，频域 [B, K, N_r, num_symbols, num_sc] 或时域 [B, K, N_r, num_samples]
         :param no: 噪声方差
         :param h_eff: 理想 CSI 时的等效信道 [B, K, N_r, K, ν, num_symbols, num_sc]
         """
-        if self.demodulator is not None:
-            y = self.air.active(self.demodulator(y))
+        y = self.frequency_grid(y)
         if not isinstance(no, torch.Tensor):
             no = torch.tensor(no, dtype=y.real.dtype, device=y.device)
         if self.estimator is not None:

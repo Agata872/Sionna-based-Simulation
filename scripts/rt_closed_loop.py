@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""射线追踪场景中的闭环下行仿真：随机撒点 → CQI → MCS（+ OLLA）→ PDSCH → CRC。
+"""射线追踪场景中的闭环下行仿真：随机撒点 → CSI-RS → CQI → MCS（+ OLLA）→ PDSCH → CRC。
 
 默认 munich 场景、1 个 O-RU（楼顶，扇区朝北），UE 在覆盖区内随机撒点（室外、静止）。
+CQI 默认由经前传发送的预编码 CSI-RS / CSI-IM 测得（--cqi-source genie 改用真实等效信道）。
+每个 CSI-RS 周期 = 1 个测量时隙 + --batch-size 个数据时隙（默认 7，周期 8 个时隙）。
 
 用法（先 source env.sh）：
     python scripts/rt_closed_loop.py                          # 单 UE（SU-MIMO 2 层），30 个撒点
@@ -44,9 +46,10 @@ def parse_args():
     p.add_argument("--num-ue", type=int, default=1)
     p.add_argument("--layers-per-ue", type=int, default=2)
     p.add_argument("--drops", type=int, default=30)
-    p.add_argument("--batches", type=int, default=16, help="每个撒点的批次数")
-    p.add_argument("--batch-size", type=int, default=8, help="每批时隙数（同一 MCS）")
-    p.add_argument("--warmup", type=int, default=4, help="不计入统计的前若干批次（OLLA 收敛）")
+    p.add_argument("--batches", type=int, default=16, help="每个撒点的 CSI-RS 周期数")
+    p.add_argument("--batch-size", type=int, default=7, help="每个周期的数据时隙数（同一 MCS）")
+    p.add_argument("--warmup", type=int, default=4, help="不计入统计的前若干周期（OLLA 收敛）")
+    p.add_argument("--cqi-source", default="csi-rs", choices=["csi-rs", "genie"])
     p.add_argument("--category", default="A", choices=["A", "B"])
     p.add_argument("--uplane", default="9", help="U-plane 压缩")
     p.add_argument("--bfw", default="9", help="Cat B 权值压缩")
@@ -125,7 +128,8 @@ def plot(out, path):
 
     # ---- SNR 与 CQI / MCS / 吞吐量 ----
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
-    axes[0].scatter(snr, cqi, s=14, label="上报 CQI")
+    axes[0].scatter(snr, cqi, s=14, label=f"上报 CQI（{a.get('cqi_source', 'genie')}）")
+    axes[0].scatter(snr, ue("cqi_genie"), s=14, marker="+", label="精灵 CQI")
     axes[0].scatter(snr, mcs, s=14, marker="x", label="平均 MCS")
     axes[0].set_ylabel("序号"); axes[0].legend(fontsize=8)
     s2 = axes[1].scatter(snr, tput, c=bler, cmap="coolwarm", vmin=0, vmax=0.3, s=16)
@@ -145,7 +149,7 @@ def plot(out, path):
             axes[0].step(range(len(h["mcs"])), np.array(h["mcs"])[:, k], where="post", label=lab)
             axes[1].step(range(len(h["olla_offset_db"])), np.array(h["olla_offset_db"])[:, k], where="post")
     axes[0].set_ylabel("MCS"); axes[1].set_ylabel("OLLA 偏移 [dB]")
-    axes[1].set_xlabel(f"批次（每批 {a['batch_size']} 个时隙）")
+    axes[1].set_xlabel(f"CSI-RS 周期（每周期 {a['batch_size']} 个数据时隙）")
     for ax in axes:
         ax.axvline(a["warmup"] - 0.5, color="k", ls=":", lw=0.8); ax.grid(alpha=0.3)
     axes[0].legend(fontsize=7, ncol=3)
@@ -178,6 +182,7 @@ def main():
                      num_layers_per_ue=args.layers_per_ue, num_prb=args.num_prb,
                      mcs_table=args.mcs_table, uplane=compression_of(args.uplane),
                      bfw=compression_of(args.bfw), channel_estimation=args.channel_estimation,
+                     cqi_source=args.cqi_source,
                      device=args.gpu)
     if args.tx_power is not None:
         cfg.rt.tx_power_dbm = args.tx_power
@@ -201,7 +206,8 @@ def main():
         out["drops"].append(jsonable(s))
         ue = " | ".join(
             f"UE{k} ({s['positions'][k][0]:6.1f},{s['positions'][k][1]:6.1f}) SNR {s['snr_db'][k]:5.1f} dB "
-            f"CQI {s['cqi'][k]:2d} MCS {s['mean_mcs'][k]:4.1f} BLER {s['bler'][k]:.2f} "
+            f"CQI {s['cqi'][k]:4.1f}（精灵 {s['cqi_genie'][k]:4.1f}） MCS {s['mean_mcs'][k]:4.1f} "
+            f"BLER {s['bler'][k]:.2f} "
             f"{s['throughput_mbps'][k]:6.1f} Mbps" for k in range(cfg.num_ue))
         print(f"撒点 {i:3d} | {ue} | {time.time() - t:.1f} s", flush=True)
         with open(path, "w", encoding="utf-8") as f:
