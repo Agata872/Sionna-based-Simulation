@@ -5,7 +5,9 @@ Category A（预编码在 O-DU）与 Category B（预编码在 O-RU）在前传 
 另有闭环模式：用 Sionna RT 对物理环境做射线追踪，UE 随机撒点，按 CQI 选 MCS 后进行下行传输。
 
 规范版本以 `3GPP and ORAN report/` 中的文档为准：TS 38.211 V18.6.0、TS 38.212 V18.5.0、
-TS 38.214 V18.2.0（Rel-18），O-RAN WG4 CUS v08.00。
+TS 38.214 V18.2.0（Rel-18），O-RAN WG4 CUS v22.00（O-RAN.WG4.TS.CUS.0-R005-v22.00）。
+已实现的部分（附录 A 的三种压缩算法、udCompMeth / bfwCompMeth 编码、段类型 1 与 SE 11 的报文格式）
+与此前使用的 v08.00 相同。
 
 ## 仿真范围
 
@@ -217,7 +219,7 @@ print(drops[0].summary(cfg.slots_per_second))
    （平均时延约 1.5 µs）时，不补偿 EVM 约 55%，补偿后与理想 CSI 相当（约 7%~17%）。
 5. **UE 不知道压缩噪声**：LMMSE 只使用热噪声方差 N0，前传压缩失真对 UE 是未知的附加失真。
 6. **定点化**：前传 IQ 先按 16 bit 定点化（O-RAN 不压缩时的格式），缩放使标称功率的 I/Q 分量 RMS 比满量程
-   低 15 dB；之后按 O-RAN WG4 CUS v08.00 附录 A 压缩，三种方法每 PRB 都带 1 字节 udCompParam：
+   低 15 dB；之后按 O-RAN WG4 CUS v22.00 附录 A（规范性附录）压缩，三种方法每 PRB 都带 1 字节 udCompParam：
    - BFP（A.1）：4 bit 指数；
    - 块缩放（A.2）：8 bit 缩放因子 sblockScaler（Q1.7），粒度比 2 的幂次指数细，同位宽下 SQNR 比 BFP 高 2~5 dB；
    - μ 律（A.3）：4 bit compBitWidth + 4 bit compShift，先整块左移再做 μ = 8 的三段分段线性压扩。

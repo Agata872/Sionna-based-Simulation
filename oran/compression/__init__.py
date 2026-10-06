@@ -7,7 +7,7 @@
     x_hat, c = comp.roundtrip(x_int)      # x_int: [..., num_blocks, block_len] 定点取值复数
     c.total_bits                          # 压缩后的比特数
 
-已实现（算法按 O-RAN WG4 CUS v08.00 附录 A）：
+已实现（算法按 O-RAN WG4 CUS v22.00 附录 A，与 v08.00 相同）：
     "ideal"          理想前传（不量化，仿真参考）
     "none"           定点不压缩（udCompMeth 0），iq_width 默认 16
     "bfp"            块浮点（udCompMeth 1，附录 A.1）
@@ -16,7 +16,8 @@
 
 扩展新算法：在本目录新建文件，继承 :class:`IQCompressor`，设置 ``method`` 和
 ``param_bits``，实现 compress/decompress，再用 :func:`register_compressor` 注册。
-O-RAN 中其他方法（尚未实现）：modulation(4)、bfp_selective_re(5)、modulation_selective_re(6)。
+O-RAN 中其他方法（尚未实现）：modulation(4)、bfp_selective_re(5)、modulation_selective_re(6)、
+bfp_selective_re_hdr(7)、modulation_selective_re_hdr(8)。
 """
 
 from typing import Dict, Type

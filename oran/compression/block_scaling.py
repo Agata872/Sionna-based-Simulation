@@ -1,8 +1,8 @@
-"""块缩放（Block Scaling）压缩，O-RAN WG4 CUS（v08.00）附录 A.2，udCompMeth = 2。
+"""块缩放（Block Scaling）压缩，O-RAN WG4 CUS（v22.00）附录 A.2，udCompMeth = 2。
 
 与 BFP 一样按块（U-plane 为一个 PRB 的 12 个 RE）共用一个参数，但参数不是 2 的幂次指数，
 而是 8 bit 的乘性缩放因子 sblockScaler（无符号 Q1.7，128 表示 1.0），缩放粒度更细。
-附录 A.2.1 / A.2.2 的参考算法（输入、输出均为 16 bit 定点）：
+附录 A.2.2 / A.2.3 的参考算法（输入、输出均为 16 bit 定点）：
 
     maxV, minV   = 块内 I/Q 的最大值、最小值
     maxValue     = max(maxV, |minV| - 1)                              # 15 bit

@@ -19,15 +19,18 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
-# O-RAN WG4 CUS 中 udCompMeth / bfwCompMeth 的编码
+# O-RAN WG4 CUS v22.00 中 udCompMeth 的编码（表 8.3.3.13-3）。bfwCompMeth（表 7.7.1.2-3）的 0~3 与此相同，
+# 4、5 则是 beamspace 压缩 type I / II
 COMP_METH_CODES = {
-    "none": 0,                     # 不压缩（定点，位宽由 udIqWidth 给出，0 表示 16 bit）
-    "bfp": 1,                      # 块浮点
-    "block_scaling": 2,            # 块缩放
-    "mu_law": 3,                   # μ 律
-    "modulation": 4,               # 调制压缩
-    "bfp_selective_re": 5,         # BFP + 选择性 RE 发送
-    "modulation_selective_re": 6,  # 调制压缩 + 选择性 RE 发送
+    "none": 0,                         # 不压缩（定点，位宽由 udIqWidth 给出，0 表示 16 bit）
+    "bfp": 1,                          # 块浮点
+    "block_scaling": 2,                # 块缩放
+    "mu_law": 3,                       # μ 律
+    "modulation": 4,                   # 调制压缩
+    "bfp_selective_re": 5,             # BFP + 选择性 RE 发送（掩码在 udCompParam）
+    "modulation_selective_re": 6,      # 调制压缩 + 选择性 RE 发送（掩码在 udCompParam）
+    "bfp_selective_re_hdr": 7,         # BFP + 选择性 RE 发送（掩码在 U-plane 段头，附录 A.6.3）
+    "modulation_selective_re_hdr": 8,  # 调制压缩 + 选择性 RE 发送（掩码在 U-plane 段头，附录 A.6.3）
 }
 
 

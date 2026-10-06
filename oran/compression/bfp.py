@@ -1,14 +1,14 @@
-"""块浮点（Block Floating Point, BFP）压缩，O-RAN WG4 CUS（v08.00）附录 A.1，udCompMeth = 1。
+"""块浮点（Block Floating Point, BFP）压缩，O-RAN WG4 CUS（v22.00）附录 A.1，udCompMeth = 1。
 
 每块（U-plane 为一个 PRB 的 12 个 RE）确定一个公共指数 e，使块内样点右移 e 位后能放进
-iq_width 位有符号整数（附录 A.1.1 的参考算法）：
+iq_width 位有符号整数（附录 A.1.2 的参考算法）：
 
     maxV     = max(Re, Im)，minV = min(Re, Im)            # 块内 I/Q 的最大值、最小值
     maxValue = max(maxV, |minV| - 1)                     # 补码负数可多表示一位，如 -256 用 9 bit 即可
     raw_exp  = floor(log2(maxValue)) + 1                 # 表示 maxValue 所需位数（不含符号位）
     e        = max(raw_exp - iq_width + 1, 0)            # +1 为符号位
     m        = sat(round(x / 2^e), iq_width)             # 尾数，iq_width 位补码
-    x_hat    = m * 2^e                                   # 解压（附录 A.1.2）
+    x_hat    = m * 2^e                                   # 解压（附录 A.1.3）
 
 规范的伪代码未说明取整进位溢出（如 511/2 -> 256 超出 9 bit）如何处理，这里做饱和。
 

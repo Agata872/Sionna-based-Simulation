@@ -1,4 +1,4 @@
-"""μ 律（μ-law）压缩，O-RAN WG4 CUS（v08.00）附录 A.3，udCompMeth = 3。
+"""μ 律（μ-law）压缩，O-RAN WG4 CUS（v22.00）附录 A.3，udCompMeth = 3。
 
 先对整个 PRB 做左移（compShift，0~7）以利用动态范围，再对每个样点的幅度做 μ = 8 的
 三段分段线性压扩（小幅度量化步长更细），最后恢复符号。输入固定为 16 bit 定点。
