@@ -1,0 +1,320 @@
+{
+ "note": "Paper-1 experiment manifest (see paper1/experiments.md). Each run keeps metadata.json and its own source snapshot; figures and paper1_summary.json come from scripts/summarize_paper1.py.",
+ "scripts": {
+  "explore_twin_cellfree.py": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+  "explore_twin_tracking.py": "50321d7857eef138c8748ebe71cb7df72a22bbb5c518f900c918957fad1e3bf5",
+  "twin_ae.py": "d14e07e3c21196c60fde32ab93f1dfff283cea74f392d72ce1c8309177d54a7b",
+  "paper1_region_dimension.py": "423a399f57ef122ec989747c141720ddd893aa455b108102c6e3b43b9fa9ffc7",
+  "paper1_ae_study.py": "b623ee247cc17b749b80fb2224599e54c16374fe33eadc9ea023efa723d76312",
+  "summarize_paper1.py": "203851d2ef13e540187096b8d19387fc6c6be0502e43ba6c5358a8b2f3351d27",
+  "paper1_jobs.sh": "569aadf328b04fd7a59f500138fc104e2c3a50b6ed78e12a922ede379bde5652",
+  "paper1_jobs2.sh": "42084f81d12db0351b4e6034c28f4de996035cc8b21b1fd40346fcb1b8c4082b",
+  "paper1_jobs3.sh": "fa7d2e41bdd43ecd9226cb3873ebe9e2481176e5bf3cfd3e37cced189e4d1476"
+ },
+ "data_cache": {
+  "ae_study_data/site_twin_20269300.npz": "97421bcfa8e73bb69b5b9b8ecef66a6670504315d218d3fed52ec11e47362e59"
+ },
+ "figures": {
+  "fig_ablation_grid.png": "f4a4b58f0c5847918bb57ef5013578957652a5430f726044c5a5b23ced4fcaea",
+  "fig_ablation_location.png": "20c94f38eb94bcba302b468966a454f0607cce4f3d235207c79937171e276d70",
+  "fig_dimension.png": "ed536fd37db330d0fdb24cc389a9adfa9068a2905142c1a2859891d57a045629",
+  "fig_kscale.png": "1e13e550ade016bc776725fbe4e526f5429b93c00aef846f26d245715fc0981b",
+  "fig_main_k8.png": "7d65e2c5c7c0e4c850416b8c0939eed469f63be62ce8e60286fbf3c86f482dbe",
+  "fig_mismatch.png": "33a4cc614d5e9ce4f491d260f77cad66385f8e3a9deca706d9067e19f2b950d2"
+ },
+ "summary_sha256": "89dcb54108ba3acfecd303265804c5a8114b406bdc10f828cd0ca753fc8edb4b",
+ "runs": [
+  {
+   "run": "ae_k8_diffuse_16",
+   "complete": true,
+   "role": "E5 twin-trained autoencoders (preliminary config), + diffuse",
+   "rows": 2304,
+   "rows_sha256": "fee77f9cbcb114fecdced4cb2913884cd5c2ba08a250b21735270a8934e36741",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T21:43:51Z",
+   "completed_utc": "2026-10-08T22:27:39Z"
+  },
+  {
+   "run": "ae_k8_nominal_16",
+   "complete": true,
+   "role": "E5 twin-trained autoencoders (preliminary config), reality = twin",
+   "rows": 2304,
+   "rows_sha256": "7af6eb5a3291ae945365f929ed8cec46d4bfcf34e800dcc6a3e2596985b7db92",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T21:17:37Z",
+   "completed_utc": "2026-10-08T22:02:12Z"
+  },
+  {
+   "run": "ae_study_ru01",
+   "complete": true,
+   "role": "E5b offline data-driven codec study (NMSE vs latent size)",
+   "rows": 52,
+   "rows_sha256": "ae293c9c25873d226f944a3d2ad0da7a45885d8f46a7474b4a9b871f96d1ee2f",
+   "script_sha256": null,
+   "source_snapshot_sha256": "b623ee247cc17b749b80fb2224599e54c16374fe33eadc9ea023efa723d76312",
+   "started_utc": "2026-10-08T23:39:24Z",
+   "completed_utc": "2026-10-08T23:50:18Z"
+  },
+  {
+   "run": "cai4_k8_diffuse_16",
+   "complete": true,
+   "role": "E2 Cai et al. 4-vertex grid basis, + diffuse",
+   "rows": 1440,
+   "rows_sha256": "42e38c09237e3d13617f810520fa3cfe032e3a2dc95780b1a3d7e2452ee1c444",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:53:09Z",
+   "completed_utc": "2026-10-08T21:08:27Z"
+  },
+  {
+   "run": "cai4_k8_nominal_16",
+   "complete": true,
+   "role": "E2 Cai et al. 4-vertex grid basis, reality = twin",
+   "rows": 1440,
+   "rows_sha256": "a628ee949884a77b25ad0d4270a43740f4096dd1d6231ef1253401daf0ca624e",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T21:34:16Z",
+   "completed_utc": "2026-10-08T21:49:25Z"
+  },
+  {
+   "run": "cai4_k8_nominal_16.partial-20261008T213407Z",
+   "complete": false,
+   "role": "superseded partial run (GPU out of memory), not used",
+   "rows": 60,
+   "rows_sha256": "172f59ac72d895a48668b71fd52e54ec7946b75c404dee191d49e8ef6b6a64e9",
+   "script_sha256": "0b3ec6a954cb7805da58ac11a3baad0061392627eb74740f7a424bf167ccfbbd",
+   "source_snapshot_sha256": "0b3ec6a954cb7805da58ac11a3baad0061392627eb74740f7a424bf167ccfbbd",
+   "started_utc": "2026-10-08T20:15:14Z"
+  },
+  {
+   "run": "dim_region_16",
+   "complete": true,
+   "role": "E6 effective dimension vs s, aperture, bandwidth (T2)",
+   "rows": 1452,
+   "rows_sha256": "2add71a9320c5c7f3b4fd6083007e67c2c1f182c42934953656d40e25ba1f0a0",
+   "script_sha256": "423a399f57ef122ec989747c141720ddd893aa455b108102c6e3b43b9fa9ffc7",
+   "source_snapshot_sha256": "423a399f57ef122ec989747c141720ddd893aa455b108102c6e3b43b9fa9ffc7",
+   "started_utc": "2026-10-08T22:06:09Z",
+   "completed_utc": "2026-10-08T22:41:07Z"
+  },
+  {
+   "run": "main_k16_diffuse_8",
+   "complete": true,
+   "role": "E1 UE scaling K=16, + diffuse",
+   "rows": 1248,
+   "rows_sha256": "39ac8f20f9872b499f254fffe2b5721801ae2ef5cd861b2d5f5128ef2ec8d718",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:23:26Z",
+   "completed_utc": "2026-10-08T20:52:57Z"
+  },
+  {
+   "run": "main_k16_nominal_8",
+   "complete": true,
+   "role": "E1 UE scaling K=16, reality = twin",
+   "rows": 1248,
+   "rows_sha256": "b3aa78378b63a80dc7aa3a4f1f81c68bda3ab055946bf551d6d506c02c7b1a7f",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:52:03Z",
+   "completed_utc": "2026-10-08T21:17:24Z"
+  },
+  {
+   "run": "main_k16_nominal_8.partial-20261008T205155Z",
+   "complete": false,
+   "role": "superseded partial run (GPU out of memory), not used",
+   "rows": 0,
+   "rows_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "script_sha256": "0b3ec6a954cb7805da58ac11a3baad0061392627eb74740f7a424bf167ccfbbd",
+   "source_snapshot_sha256": "0b3ec6a954cb7805da58ac11a3baad0061392627eb74740f7a424bf167ccfbbd",
+   "started_utc": "2026-10-08T20:12:38Z"
+  },
+  {
+   "run": "main_k32_diffuse_6",
+   "complete": true,
+   "role": "E1 UE scaling K=32, + diffuse",
+   "rows": 936,
+   "rows_sha256": "8b786362f6d1e92056efa1929e612ba0d2f7506f04f838145839f20080c2fc33",
+   "script_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "source_snapshot_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "started_utc": "2026-10-08T19:53:39Z",
+   "completed_utc": "2026-10-08T20:28:58Z"
+  },
+  {
+   "run": "main_k32_nominal_6",
+   "complete": true,
+   "role": "E1 UE scaling K=32, reality = twin",
+   "rows": 936,
+   "rows_sha256": "96d12b911f976de200dfa684435b9c4675de262ddf1ad6b65f5179f7605d9178",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:52:35Z",
+   "completed_utc": "2026-10-08T21:33:10Z"
+  },
+  {
+   "run": "main_k32_nominal_6.partial-20261008T205226Z",
+   "complete": false,
+   "role": "superseded partial run (GPU out of memory), not used",
+   "rows": 624,
+   "rows_sha256": "a9705f626f9c6da4f5077e06a1113881fddbd28b9a2abf073bb3084b101f6f6d",
+   "script_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "source_snapshot_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "started_utc": "2026-10-08T19:53:37Z"
+  },
+  {
+   "run": "main_k8_diffuse_16",
+   "complete": true,
+   "role": "E1 main comparison K=8, + diffuse",
+   "rows": 3744,
+   "rows_sha256": "d57ba58973314495df35f9f686ce20808133d2082c72336983aaf35af34ef58d",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T21:09:35Z",
+   "completed_utc": "2026-10-08T21:43:35Z"
+  },
+  {
+   "run": "main_k8_diffuse_16.partial-20261008T210925Z",
+   "complete": false,
+   "role": "superseded partial run (GPU out of memory), not used",
+   "rows": 3042,
+   "rows_sha256": "7083debb9020e20277c3638702ad65f8d83b763130354a2c4892fcb5b204b187",
+   "script_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "source_snapshot_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "started_utc": "2026-10-08T19:53:39Z"
+  },
+  {
+   "run": "main_k8_nominal_16",
+   "complete": true,
+   "role": "E1 main comparison K=8, reality = twin",
+   "rows": 3744,
+   "rows_sha256": "3f147b29589546477b2196126285510d9b09e989efb696069d03dfc2ece7641c",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:16:25Z",
+   "completed_utc": "2026-10-08T20:51:49Z"
+  },
+  {
+   "run": "main_k8_nominal_16.partial-20261008T201616Z",
+   "complete": false,
+   "role": "superseded partial run (GPU out of memory), not used",
+   "rows": 1872,
+   "rows_sha256": "84b41cca441adfb7257f32628076caf9b948d14335a83cb5e7a2f0498c0e6502",
+   "script_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "source_snapshot_sha256": "ad8aea7235919455b2dec28ef338c63e4878da98a76f0489617a045f1957a6c3",
+   "started_utc": "2026-10-08T19:53:39Z"
+  },
+  {
+   "run": "mm_all_6",
+   "complete": true,
+   "role": "E7 twin mismatch: all",
+   "rows": 648,
+   "rows_sha256": "7cdac75ff428c6ee0956afbc740d693c0a919124fa39ba3e483e2b16a2ff3f03",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T22:00:36Z",
+   "completed_utc": "2026-10-08T23:24:34Z"
+  },
+  {
+   "run": "mm_cars40_6",
+   "complete": true,
+   "role": "E7 twin mismatch: cars40",
+   "rows": 648,
+   "rows_sha256": "1222b57b60452a0c95cf4647ae309eedcdd08790f9812fdc5dbce9d7c0decb65",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T23:52:54Z",
+   "completed_utc": "2026-10-09T01:15:09Z"
+  },
+  {
+   "run": "mm_diffusetw0_6",
+   "complete": true,
+   "role": "E7 twin mismatch: diffusetw0",
+   "rows": 648,
+   "rows_sha256": "66d9ffb9718d3e94fb07a26a644af1df7d50ec0e84d3aa88dd9eb534f5baa6f0",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T21:49:36Z",
+   "completed_utc": "2026-10-08T21:59:47Z"
+  },
+  {
+   "run": "mm_geom05_6",
+   "complete": true,
+   "role": "E7 twin mismatch: geom05",
+   "rows": 648,
+   "rows_sha256": "da20aa7101b528d21392f25c9ca2fceb77cfbb5a7448606c13ffe1c2b9afca84",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T22:12:21Z",
+   "completed_utc": "2026-10-08T23:40:22Z"
+  },
+  {
+   "run": "mm_mat03_6",
+   "complete": true,
+   "role": "E7 twin mismatch: mat03",
+   "rows": 648,
+   "rows_sha256": "f35054f26798436a83ca23f6e53e7398d4f9f4a2ea192bb687632dc1ee940e32",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T22:27:55Z",
+   "completed_utc": "2026-10-08T23:52:38Z"
+  },
+  {
+   "run": "mm_nominal_6",
+   "complete": true,
+   "role": "E7 twin mismatch: nominal",
+   "rows": 648,
+   "rows_sha256": "97c2ae0327059d41f193c35b897a66d78b147056f1487a03edfe0ee0b8a96d6b",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T22:02:26Z",
+   "completed_utc": "2026-10-08T22:11:48Z"
+  },
+  {
+   "run": "perru_k8_diffuse_16",
+   "complete": true,
+   "role": "E3 per-O-RU power constraint, + diffuse",
+   "rows": 2016,
+   "rows_sha256": "7c8a445c5c886f2497f9ebc8ec516306c795deb9d1e0204626d184d0438cd8a7",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:29:12Z",
+   "completed_utc": "2026-10-08T21:00:20Z"
+  },
+  {
+   "run": "perru_k8_nominal_16",
+   "complete": true,
+   "role": "E3 per-O-RU power constraint, reality = twin",
+   "rows": 2016,
+   "rows_sha256": "f30cae4e714ecee5be77aa9db9fedf87fd818569bb2efd38b3e00e2aaf7e5b74",
+   "script_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "source_snapshot_sha256": "0355154e04e19c5963f076d94a245cb1b3cffa59788bc512bc3bff0e2c70af4c",
+   "started_utc": "2026-10-08T20:19:59Z",
+   "completed_utc": "2026-10-08T20:51:48Z"
+  },
+  {
+   "run": "track_final_diffuse_8",
+   "complete": true,
+   "role": "E4 closed-loop localization, final method, + diffuse",
+   "rows": 336,
+   "rows_sha256": "e8e825c66020fe0eaad1ebfebdc8a450bdc689f6811968279149d2b284179b1a",
+   "script_sha256": "50321d7857eef138c8748ebe71cb7df72a22bbb5c518f900c918957fad1e3bf5",
+   "source_snapshot_sha256": "50321d7857eef138c8748ebe71cb7df72a22bbb5c518f900c918957fad1e3bf5",
+   "started_utc": "2026-10-08T21:01:25Z",
+   "completed_utc": "2026-10-08T21:34:03Z"
+  },
+  {
+   "run": "track_final_nominal_8",
+   "complete": true,
+   "role": "E4 closed-loop localization, final method, reality = twin",
+   "rows": 336,
+   "rows_sha256": "83f4499395babdba61bc8aaa7a2f99989d5d4b0d482bb5bcc4406bd2fc991aba",
+   "script_sha256": "50321d7857eef138c8748ebe71cb7df72a22bbb5c518f900c918957fad1e3bf5",
+   "source_snapshot_sha256": "50321d7857eef138c8748ebe71cb7df72a22bbb5c518f900c918957fad1e3bf5",
+   "started_utc": "2026-10-08T21:33:25Z",
+   "completed_utc": "2026-10-08T22:05:57Z"
+  }
+ ]
+}

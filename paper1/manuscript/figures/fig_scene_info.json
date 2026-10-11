@@ -1,0 +1,17 @@
+{
+ "ue": [
+  90.0,
+  115.0,
+  1.5
+ ],
+ "o_rus_with_paths": 4,
+ "nearest_o_ru_m": 76.20555765361323,
+ "paths_per_ru": [
+  53,
+  327,
+  95,
+  1
+ ],
+ "posterior_std_m": 2.23606797749979,
+ "render": "ok"
+}
