@@ -24,6 +24,7 @@ Sionna-based Simulation/
 ├── oran/               # O-RAN 7.2x 下行 Cat A / Cat B 链路级仿真（说明见 oran/README.md）
 │   └── compression/    #   前传 IQ 压缩算法（BFP 等）
 ├── scripts/            # 仿真脚本，如 compare_cat_a_b.py（Cat A/B × 压缩位宽 × SNR 扫描）
+├── cqi_compression/    # CQI 查表时是否考虑前传压缩对 BLER 的影响（含 Colab 笔记本、GPU 自检）
 ├── tests/              # 单元测试：python -m unittest discover -s tests -v
 ├── results/            # 仿真输出（不纳入 git）
 ├── env.sh              # 激活环境（终端用）
@@ -187,6 +188,12 @@ CUDA_VISIBLE_DEVICES=1 python sim_b.py &
   ```
 
   装好后须重启 Jupyter 内核。
+- **GPU 计算不可靠（2026-10-29 发现）**：这台 RTX 4060 Laptop 在持续负载下会间歇性读错显存，
+  表现为 Sionna 的 LDPC 译码在相同输入、相同种子下结果不同，以及下标越界断言或 `illegal instruction`。
+  不经过 Sionna 的纯 PyTorch 循环也能复现，同一脚本在 CPU 上完全一致；自检有时也会碰巧通过。
+  在这台笔记本上请用 CPU 跑链路级仿真（`CUDA_VISIBLE_DEVICES=`），或改用 Colab / 服务器。
+  换新机器后先运行 `python cqi_compression/gpu_selfcheck.py`，详见 [cqi_compression/README.md](cqi_compression/README.md)。
+  此前在这台笔记本 GPU 上得到的链路级结果（包括重新运行的 `notebooks/closed_loop_walkthrough.ipynb`）需要复核。
 
 ## 复现环境
 
