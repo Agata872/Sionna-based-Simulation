@@ -1,5 +1,5 @@
 # Python 虚拟环境（约 6.7 GB，用 requirements.txt 复现）
-.venv/
+.venv
 
 # Python 缓存
 __pycache__/
@@ -13,3 +13,16 @@ results/
 
 # 参考资料（版权文档，不纳入 git）
 *.pdf
+
+# IDE 配置（PyCharm）
+.idea/
+
+# LaTeX 编译产物
+paper1/manuscript/*.aux
+paper1/manuscript/*.bbl
+paper1/manuscript/*.blg
+paper1/manuscript/*.fdb_latexmk
+paper1/manuscript/*.fls
+paper1/manuscript/*.log
+paper1/manuscript/*.out
+paper1/manuscript/*.synctex.gz
