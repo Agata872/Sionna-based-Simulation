@@ -9,10 +9,10 @@
 | Q2 | CPU 计时 | `--drops 2` | 本机 CPU | `cpu_timing/` | 手动停止（改用 Colab）。7 分 6 秒写入 206 行（约 26 个"位宽 × 4 周期"单元），据此估计完整实验约 3.5 小时 |
 | Q3 | 检查运行中复核与汇总脚本 | `--drops 1 --periods 1 --widths ideal 5 --categories A` | 本机 CPU | `cpu_check/` | 完成：`recheck_mismatches` = 0 |
 | Q4 | 检查 `--rt-llvm`（链路 GPU、射线追踪 CPU） | `--device cuda:0 --rt-llvm --drops 1 --periods 1 --widths ideal --categories A` | 本机 GPU + LLVM | `rtllvm_check/` | 完成：Mitsuba 变体为 llvm_ad_mono_polarized |
-| Q5 | 正式运行 | `--device cuda:0 --drops 50`（按 `colab_continue.ipynb`） | Colab GPU | Drive 上的 `main/` | 待运行 |
+| Q5 | 正式运行 | `--device cuda:0 --drops 50`（按 `colab_continue.ipynb`） | Colab A100-SXM4-80GB，torch 2.11.0+cu130，射线追踪 cuda_ad_mono_polarized | Drive 上的 `main/`；本机 `colab_main/`（从笔记本输出提取的报告、日志、图，无 rows.jsonl） | 完成 2026-10-29，约 14.5 分钟。GPU 自检两项 PASS，日志中无复核不一致。结论见 README"结果" |
 
-## Q5 完成后要登记的内容
+## Q5 的登记
 
-- `complete.json`：`recheck_mismatches` 必须为 0；记下 GPU 型号、torch 版本、Mitsuba 变体和总耗时。
-- `report.txt`：排除的基线失败 UE 数；各 Cat、各位宽下四种 CQI 的 BLER、失败 UE 比例、平均吞吐、平均 MCS。
-- 结论写到 [README.md](README.md) 的"进度与下一步"。
+- 运行中复核：脚本只在 `recheck_mismatches` 不为 0 时打印警告，日志中没有警告，也没有任何一行标注"复核不一致"。`complete.json` 在 Drive 上，下载后可再核对。
+- 汇总：200 个 UE-撒点中排除 26 个（理想前传下精灵 CQI 也失败）。各 Cat、各位宽下四种 CQI 的 BLER、失败 UE 比例、平均吞吐、平均 MCS 见 `colab_main/report.txt`，主要数字与结论见 [README.md](README.md) 的"结果"。
+- 冒烟测试（`--drops 2 --periods 1 --widths ideal 5`）同在 Colab 上运行，日志为 `colab_main/smoke_colab.log`。

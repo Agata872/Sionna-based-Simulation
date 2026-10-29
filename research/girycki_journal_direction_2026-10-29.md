@@ -26,7 +26,7 @@
 
 | 编号 | 内容 | 判据 | 状态 |
 |---|---|---|---|
-| V-a | CQI 查表（关闭 OLLA）时，是否考虑压缩对 BLER 的影响，块缩放各位宽 | 量化风险大小，以及失真模型需要多准（解析 aware 与 PDSCH 实测 oracle 的差别） | 代码完成，待在 Colab 上正式运行（[cqi_compression/](../cqi_compression/README.md)） |
+| V-a | CQI 查表（关闭 OLLA）时，是否考虑压缩对 BLER 的影响，块缩放各位宽 | 量化风险大小，以及失真模型需要多准（解析 aware 与 PDSCH 实测 oracle 的差别） | 完成（Colab A100）。不通知 MAC 直接降位宽的下限：Cat A 约 8 bit，Cat B 约 6–7 bit，再低时 BLER 陡增；UE 的 CSI-RS CQI 基本看不到压缩；考虑压缩后位宽可再降 1–2 bit；解析模型漏掉了 DMRS 失真对信道估计的影响；oracle 在低位宽仍超目标，原因待查（[cqi_compression/](../cqi_compression/README.md)） |
 | V-b | 时变场景、前传容量受限时，逐时隙自适应与按状态查表的和速率差距 | 差距只有 1–2% 时方向 (a) 不成立 | 未开始 |
 | V-c | 闭环 CQI / MCS / OLLA 下，"保 MCS 的位宽规则"与直接逐时隙调位宽的 BLER 和吞吐 | 规则能否在不改 MAC 的前提下守住目标 BLER | 未开始，依赖 V-a 的结论 |
 
