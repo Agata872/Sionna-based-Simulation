@@ -14,6 +14,7 @@
   6. 射线追踪 Sionna RT：在 GPU 上计算街道场景中的传播路径
 """
 
+import os
 import re
 import sys
 import time
@@ -196,9 +197,16 @@ def check_rt():
     torch.cuda.init()
     libcuda = loaded_library("libcuda.so")
     print(f"libcuda：{libcuda}")
-    match = re.search(r"libcuda\.so\.(\d+)\.", libcuda or "")
-    assert match and int(match.group(1)) >= 580, \
-        "加载的不是 580 用户态库，请先 source env.sh（见 README 注意事项 2）"
+    if libcuda and libcuda.startswith("/usr/lib/wsl/"):
+        # WSL 下 libcuda 来自 Windows 驱动（文件名不含版本号），但 Windows 不向 WSL 提供可用的 OptiX，
+        # 须从 Linux 驱动中提取 OptiX 库并加入 LD_LIBRARY_PATH（见 README 注意事项 5）
+        assert any(os.path.exists(os.path.join(d, "libnvoptix.so.1"))
+                   for d in os.environ.get("LD_LIBRARY_PATH", "").split(":") if d), \
+            "LD_LIBRARY_PATH 中没有 OptiX 库，请先 source env.sh（见 README 注意事项 5）"
+    else:
+        match = re.search(r"libcuda\.so\.(\d+)\.", libcuda or "")
+        assert match and int(match.group(1)) >= 580, \
+            "加载的不是 580 用户态库，请先 source env.sh（见 README 注意事项 2）"
     print(f"Mitsuba 变体：{mi.variant()}")
     assert mi.variant().startswith("cuda"), "Sionna RT 没有使用 GPU 后端"
 

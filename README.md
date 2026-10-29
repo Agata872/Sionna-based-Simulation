@@ -141,6 +141,53 @@ CUDA_VISIBLE_DEVICES=1 python sim_b.py &
 本环境未安装 JupyterLab，`ipykernel` 已包含在 `requirements.txt` 中。在 VS Code 中打开 `.ipynb`，
 内核选择 `.venv` 即可运行。
 
+### 5. WSL2（Windows 笔记本）
+
+已在 WSL2 Ubuntu 24.04 + RTX 4060 Laptop（Windows 驱动 617.42，WSL 内显示为 615.78.05）上验证，
+`verify_env.py` 全部通过，GPU 与 CPU 射线追踪结果最大差 0.009 dB。与服务器的差别：
+
+- **虚拟环境放在 Linux 文件系统**：项目位于 `/mnt/d`（Windows 盘），在上面装约 7 GB 的依赖和 import 都很慢。
+  虚拟环境建在 `~/.venvs/sionna-sim`，项目中的 `.venv` 是指向它的符号链接，`env.sh` 和 VS Code 照常使用：
+
+  ```bash
+  python3 -m venv ~/.venvs/sionna-sim
+  ln -s ~/.venvs/sionna-sim .venv
+  .venv/bin/python -m pip install -r requirements.txt
+  ```
+
+- **不需要 580 用户态库**：libcuda 由 Windows 驱动提供（`/usr/lib/wsl/lib`），版本已 ≥ 580。
+- **OptiX 需另行提供**：Windows 驱动不向 WSL 提供可用的 OptiX，Sionna RT 默认选 GPU 后端，
+  `load_scene` 会报 `Could not initialize OptiX!`。做法是从版本最接近的 Linux 驱动中只提取 OptiX 相关的库
+  （不需要 sudo，不修改 Windows），`env.sh` 在 WSL 下自动把该目录加入 `LD_LIBRARY_PATH`，`.env` 同理：
+
+  ```bash
+  mkdir -p /tmp/nvwsl && cd /tmp/nvwsl
+  V=615.78.08   # 与 WSL 中 nvidia-smi 显示的版本最接近的已发布版本；若更改，须同步修改 env.sh 和 .env
+  curl -fLO https://download.nvidia.com/XFree86/Linux-x86_64/$V/NVIDIA-Linux-x86_64-$V-no-compat32.run
+  sh NVIDIA-Linux-x86_64-$V-no-compat32.run -x --target driver   # 只解压，不安装
+  mkdir -p ~/.local/nvidia/wsl-optix-$V
+  cp -a driver/libnvoptix.so.$V driver/libnvidia-rtcore.so.$V driver/libnvidia-gpucomp.so.$V \
+        driver/nvoptix.bin ~/.local/nvidia/wsl-optix-$V/
+  ln -s libnvoptix.so.$V ~/.local/nvidia/wsl-optix-$V/libnvoptix.so.1
+  rm -rf /tmp/nvwsl
+  ```
+
+  不要拷贝 libcuda 等其他库，否则会覆盖 Windows 驱动提供的版本，GPU 将不可用。
+  Windows 驱动升级后若出现 OptiX 报错，按新的版本号重新提取。
+- **换行符**：在 Windows 下检出时文件会被转成 CRLF，bash 无法 `source` 这样的 `env.sh`。
+  `.gitattributes` 已规定 `*.sh` 和 `.env` 始终为 LF。
+- **中文字体**：notebook 和部分脚本的图用 `Droid Sans Fallback` 显示中文，缺少时会反复报
+  `findfont: Font family 'Droid Sans Fallback' not found`，中文显示为方框。不需要 sudo 的安装方法：
+
+  ```bash
+  mkdir -p /tmp/font && cd /tmp/font
+  apt-get download fonts-droid-fallback && dpkg-deb -x fonts-droid-fallback_*.deb root
+  mkdir -p ~/.local/share/fonts && cp root/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf ~/.local/share/fonts/
+  rm -rf /tmp/font ~/.cache/matplotlib/fontlist-*.json   # 删除 matplotlib 字体缓存，下次 import 时重建
+  ```
+
+  装好后须重启 Jupyter 内核。
+
 ## 复现环境
 
 ```bash
@@ -151,7 +198,7 @@ python3 -m venv .venv
 ```
 
 然后按注意事项 2 安装 580 用户态库。如果新机器的驱动已经 ≥ 580，则不需要这些库，
-删掉 `env.sh` 和 `.env` 中的 `LD_LIBRARY_PATH` 设置即可。
+删掉 `env.sh` 和 `.env` 中的 `LD_LIBRARY_PATH` 设置即可。WSL2 下的做法见注意事项 5。
 
 ## 参考
 
