@@ -13,7 +13,33 @@
 - **链路自适应**：`LinkAdaptationConfig(olla=False)`，即 CQI → 门限 SINR → MCS 的纯查表，不做外环修正。
 - **压缩算法**：块缩放（O-RAN CUS 附录 A.2，udCompMeth 2）。三种算法同位宽时比特率相同，块缩放的 SQNR 最高（`oran/README` 设计第 6 条）。冒烟测试中在实际 U-plane 信号上复核，5 bit 时：Cat A 块缩放 27.5 dB、BFP 25.2 dB、μ 律 25.0 dB；Cat B 28.5、27.4、23.8 dB。正式运行写入 `codec_sqnr.json`。
 - **位宽**：理想前传、9、8、7、6、5、4、3 bit。Cat B 的权值用同一方法、同一位宽。
-- **Cat A / Cat B 都做**，用同一批撒点。
+- **Cat A / Cat B 都做**，用同一批撒点。2026-10-30 起加入 split option 8（`--categories A B 8`，见下节），三种切分用同一批撒点。Girycki 等论文中的 7-1（波束赋形在 DU、前传传天线级频域 IQ）在链路级与 Cat A 相同，不单列。
+
+## Split option 8（2026-10-30 起）
+
+**标准中的定义。**
+- TR 38.801 V14.0.0 §11.1.1 / §11.1.2.8（Zotero 3GPP 分类）：option 8 是 PHY-RF 切分，DU（本仓库的 O-RU）只保留射频，包括 IFFT、CP 在内的整个物理层都在 CU（本仓库的 O-DU）。表 11.1.2.9-1 中它的前传内容是"量化的时域 IQ"，带宽随天线端口数变化（7-1 同样随天线端口数变化，7-2 随层数变化）。每个样点都要传，所以带宽也不随负载变化。
+- §11.1.3.1："option 8 已由 3GPP 以外论坛的事实标准实现（CPRI），3GPP 不应再规定"。因此没有标准化的压缩，前传量就是每个 I/Q 分量的定点位宽。
+- 带宽算法（§11.1.4.2 表注）："天线数 × 采样率 × 位宽 + 开销"，按每 20 MHz 30.72 Msps、位宽 30（2×15）计算。附录 A 表 A-1/A-2 取 100 MHz、32 天线、2×16 bit，得到 157.3 Gbps。
+- TR 38.816 V15.0.0 附录 A 只给出 option 6、7-3、7-2、7-1 的公式，不含 option 8。
+
+**本仓库的实现**（`oran/fronthaul.py` 的 `TimeDomainCodec`、`option8_rate`）：
+- O-DU 做完预编码后（与 Cat A 相同），再补保护带、做 IFFT + CP，得到各天线的时域样点。51 PRB、30 kHz 时 IFFT 为 1024 点，采样率 30.72 Msps。
+- 前传默认用均匀定点量化（`fixed`），每个 I/Q 分量 w bit。O-DU 的数字增益按位宽取削波噪声与粒状噪声之和最小的电平：时域 I/Q 近似高斯，16 / 8 / 4 bit 时削波电平分别为 RMS 的 5.9 / 3.9 / 2.6 倍。增益是静态的，按链路平均功率设定；BD 预编码后各天线功率相差约 ±1.5 dB，所以实际 SQNR 比高斯最优值低约 1 dB。也可以用 `--o8-method bfp|block_scaling|mu_law` 把 O-RAN 的分块算法用在时域样点上（每块 16 个样点，非标准，作对照）。
+- O-RU 只做 DAC 和射频。射线追踪信道只支持频域，仿真中把量化后的时域信号去 CP、做 FFT，换算成 PRB 上的频域网格，再逐子载波乘信道。逐样点量化时 CP 仍是符号尾部的拷贝，信道时延不超过 CP 时这一换算是精确的。保护带上的量化噪声在 UE 的 FFT 之后落在 PRB 以外。
+- 量化噪声均匀分布在全部 1024 个 IFFT 点上，信号只占 612 个子载波，所以 PRB 上的 SQNR 比时域 SQNR 高 10·log10(1024/612) = 2.2 dB。`uplane_sqnr_db` 是 PRB 上的值，与 Cat A/B 口径相同；时域值记在 `uplane_sqnr_time_db`。
+- 理想前传不经 IFFT/FFT，与 Cat A 理想前传逐比特相同（单元测试 `test_option8_equals_cat_a_without_compression`）。
+
+**前传比特率**（51 PRB、单个 8 天线 O-RU）：净荷 = 8 × 30.72 Msps × 2w。含协议头的比特率按 eCPRI IQ 数据消息走以太网计算，与 7.2x 的口径一致；不计 CPRI 的控制字和线路编码，也没有 C-plane。
+
+| 位宽 w | 16 | 12 | 9 | 8 | 7 | 6 | 5 | 4 | 3 |
+|---|---|---|---|---|---|---|---|---|---|
+| option 8 净荷 / 含头 Gbps | 7.86 / 8.13 | 5.90 / 6.17 | 4.42 / 4.60 | 3.93 / 4.11 | 3.44 / 3.62 | 2.95 / 3.13 | 2.46 / 2.55 | 1.97 / 2.06 | 1.47 / 1.56 |
+| Cat A 块缩放（含头）Gbps | 4.70 | 3.60 | 2.67 | 2.40 | 2.13 | 1.85 | 1.58 | 1.30 | 1.03 |
+
+同位宽下 option 8 约为 Cat A 的 1.5–1.7 倍。option 8 每个符号要传包括保护带和 CP 在内的 1096 个样点，Cat A 只传 612 个子载波，两者之比为 1.79。实际倍数低于 1.79，是因为 Cat A 每个 PRB 还要多传一个 8 bit 的缩放参数，位宽越低这部分占比越大。
+
+**位宽**：理想前传、16、12、9、8、7、6、5、4、3 bit（`--o8-widths`）。16 bit 对应 TR 38.801 附录 A 的取值。12 bit 以上 BLER 应与理想前传相同，只用来画出前传比特率的范围。
 
 ## 四种 CQI
 
@@ -42,9 +68,10 @@
 |---|---|
 | `aware_cqi.py` | 考虑压缩失真的 CQI：解析式 `distortion_aware_sinr` / `measure_cqi_aware`，PDSCH 实测 `measure_cqi_oracle` |
 | `run_cqi_bler.py` | 仿真：Cat × 撒点 × 位宽 × 周期，四种 CQI 各自查表选 MCS 后发送 PDSCH，写入运行目录 |
-| `analyse_cqi_bler.py` | 汇总：BLER、失败 UE 比例、吞吐、MCS 表格（`report.txt`）和图（`fig_bler_tput_vs_width.png`） |
-| `gpu_selfcheck.py` | GPU 自检：纯 PyTorch 类 BP 循环与 Sionna LDPC 重复译码，结果须逐位相同 |
-| `colab_continue.ipynb` | 在 Colab GPU 上继续：克隆仓库、安装、自检、冒烟测试、正式运行、汇总 |
+| `analyse_cqi_bler.py` | 汇总：BLER、失败 UE 比例、吞吐、MCS 表格（`report.txt`），各切分随位宽变化的图（`fig_bler_tput_vs_width.png`），三种切分随前传比特率变化的对比图（`fig_split_vs_fronthaul.png`） |
+| `gpu_selfcheck.py` | GPU 自检：纯 PyTorch 类 BP 循环与 Sionna LDPC 重复译码，结果须逐位相同（WSL 笔记本的 GPU 用；Colab 笔记本已不再调用） |
+| `colab_continue.ipynb` | 在 Colab GPU 上运行：克隆仓库、安装、正式运行、汇总，把原始数据以 base64 写进单元输出 |
+| `extract_colab_results.py` | 在本机从保存后的 `colab_continue.ipynb` 输出中取出结果包，校验 sha256 后解压（只依赖标准库） |
 
 运行目录沿用 `dynamic_split/runio.py` 的约定（metadata.json、源码快照、rows.jsonl、complete.json）。
 
@@ -55,6 +82,8 @@ python cqi_compression/run_cqi_bler.py --out results/cqi_compression_20261029/ma
 python cqi_compression/run_cqi_bler.py --device cuda:0 --out results/cqi_compression_20261029/main   # GPU（先自检）
 python cqi_compression/analyse_cqi_bler.py results/cqi_compression_20261029/main
 ```
+
+默认的 `--categories` 是 `A B 8`。只跑 7.2x 时用 `--categories A B`，与运行 Q5 相同。
 
 设备选项：
 
@@ -104,12 +133,14 @@ python cqi_compression/analyse_cqi_bler.py results/cqi_compression_20261029/main
 
 ## 在另一台电脑 / Colab 上继续
 
-1. 在另一台电脑的 VS Code 中拉取仓库（`main` 分支），打开 `cqi_compression/colab_continue.ipynb`。
-2. 用 Colab 扩展把内核连接到 Colab GPU 运行时。仓库目前是公开的，第 3 步直接克隆，不需要令牌；若改回私有，把笔记本第 1 步的 `PRIVATE_REPO` 设为 True，并准备只读令牌（Repository access 选中本仓库、Contents: Read-only），放进 Colab Secrets 的 `GITHUB_TOKEN`。
+2026-10-30 起的做法（不用 Google Drive，不做 GPU 自检和冒烟测试）：
+
+1. 本机修改的代码先推送到 GitHub 的 `main`：运行时从 GitHub 克隆，看不到本机文件。仓库是公开的，克隆不需要令牌。
+2. 在 VS Code 中打开 `cqi_compression/colab_continue.ipynb`，用 Colab 扩展把内核连接到 Colab GPU 运行时，从上到下运行。
    远程隧道下登录 Colab 时，浏览器会跳到 `127.0.0.1:端口` 并报错：复制完整地址，在 VS Code 终端（远程机器）运行 `curl -s "完整地址"` 即可完成登录。
-3. 从上到下运行。结果写到 Google Drive 的 `MyDrive/sionna_results/cqi_compression_20261029/`；Drive 挂载失败时写到运行时本地并打包，断开前要下载。
-4. GPU 自检两项都 PASS 才用 GPU；正式运行后检查报告开头没有"复核不一致"警告。
-5. 运行目录已存在 `rows.jsonl` 时脚本拒绝覆盖。运行中断后，换一个 `--out` 名字重跑。
+3. 结果写在运行时本地磁盘 `/content/results/cqi_compression_20261030/`，运行时断开就会丢失，所以正式运行期间要保持连接。跑完立刻运行汇总单元和打包单元，然后保存笔记本。打包单元把原始数据（不含图）以 base64 写进输出，图则随汇总单元的输出保存。
+4. 在本机用 `extract_colab_results.py` 从笔记本输出中解压到 `results/`，再用 `analyse_cqi_bler.py` 汇总。确认取回后，清空笔记本输出再提交。
+5. 检查报告开头没有"复核不一致"警告。运行目录已存在 `rows.jsonl` 时脚本拒绝覆盖；运行中断后，把笔记本第 1 单元的 `RUN` 换一个名字重跑。
 
 ## 只用 CPU 的原因（2026-10-29）
 

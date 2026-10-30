@@ -5,6 +5,8 @@
     -> 调制 -> 层映射 -> RE 映射（数据 + DMRS；测量时隙另放 CSI-RS / CSI-IM，见 csi_rs.py）
     -> Cat A：预编码 -> 前传发送 N_TRX 路天线端口流
        Cat B：前传发送 L 路层流 + C-plane 预编码权值
+       option 8：预编码 -> IFFT + CP -> 前传发送 N_TRX 路时域 IQ（IFFT + CP 放在
+                 :class:`oran.fronthaul.TimeDomainCodec` 里做，这里输出与 Cat A 相同的天线端口网格）
 
 预编码与 RE 映射的先后：图中 Cat A 为"预编码 -> RE 映射"，这里先做 RE 映射（含 DMRS）再逐 RE
 预编码。预编码是逐 RE 的线性运算，两种顺序结果相同，而 DMRS 本就需要与数据一起预编码。
@@ -123,7 +125,7 @@ class ODU:
         uplane, weights = [], []
         for o in range(self.cfg.num_oru):
             w_o = w[:, :, o * n:(o + 1) * n, :]             # 该 O-RU 天线对应的权值行
-            if self.cfg.category == "A":
+            if self.cfg.category in ("A", "8"):
                 uplane.append(apply_precoder(x_layers, w_o, self.prg_of_sc))
                 weights.append(None)
             else:

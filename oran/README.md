@@ -42,6 +42,12 @@ UE
 | 压缩噪声注入位置 | 天线端口上，空间白色，不经预编码 | 层上，随信号一起被预编码（也随 BD 一起对其他 UE 置零） |
 | C-plane | 只有段描述 | 另带 N_TRX × L 预编码权值（可压缩） |
 
+另有 3GPP split option 8（`category="8"`，TR 38.801 §11.1.2.8）：O-DU 做完预编码后再做 IFFT + CP，前传承载 N_TRX 路
+时域 IQ，没有 C-plane，O-RU 只剩射频。3GPP 不规定 option 8 的接口与压缩（实际由 CPRI 实现），默认按每个 I/Q 分量
+w bit 的均匀定点量化（`CompressionConfig("fixed", w)`，削波电平按位宽取最优），量化噪声落在全部 IFFT 点上（含保护带）。
+实现与比特率见 `fronthaul.py` 的 `TimeDomainCodec`、`option8_rate`，以及 `../cqi_compression/README.md` 的 option 8 一节。
+理想前传时 option 8 与 Cat A 逐比特相同。
+
 ### 闭环（`ClosedLoopDownlink`，Sionna RT 信道，随机撒点）
 
 在上面的链路外加上 UE 的 CSI 测量上报和 gNB MAC 的链路自适应。各层的处理方式如下：
@@ -163,7 +169,7 @@ print(drops[0].summary(cfg.slots_per_second))
 - **U-plane SQNR**：前传 IQ 经定点化 + 压缩后的信号与量化噪声功率比。
 - **前传比特率**：单个 O-RU 链路的 U-plane + C-plane 比特率，含 eCPRI 和以太网开销
   （见 `fronthaul.py` 中头部长度的说明）。100 MHz、每层不压缩时为 3276 × 14 × 2000 × 32 = 2.93 Gbps，
-  与书中数值一致。
+  与书中数值一致。option 8 为天线数 × 采样率（IFFT 点数 × 子载波间隔）× 2w，按 eCPRI IQ 数据消息加以太网开销。
 - **宽带 SNR（闭环）**：P_RE·mean|h|²/N0，按每根接收天线、各发射天线等功率计算，不含波束赋形和接收合并增益。
 - **吞吐量（闭环）**：warmup 之后数据时隙中首传成功的 TB 比特数除以数据时隙时长（没有 HARQ 重传；测量时隙的
   PDSCH 视为与数据时隙相同）。
@@ -182,7 +188,7 @@ print(drops[0].summary(cfg.slots_per_second))
 | `odu.py` | O-DU High-PHY |
 | `precoding.py` | BD、特征 ZF / RZF，按 PRG 计算与应用 |
 | `compression/` | IQ 压缩算法：`base.py`（基类、定点、比特打包）、`bfp.py`（块浮点）、`block_scaling.py`（块缩放）、`mu_law.py`（μ 律）、`none.py` |
-| `fronthaul.py` | 前传链路（U-plane / C-plane 编解码与统计）、比特率估算 |
+| `fronthaul.py` | 前传链路（U-plane / C-plane 编解码与统计；option 8 的时域 IQ 量化 `TimeDomainCodec`）、比特率估算 |
 | `oru.py` | O-RU Low-PHY、空口参数（IFFT 点数、保护带、CP） |
 | `channel.py` | 多链路信道（CDL 或射线追踪）、CSI 提取、加信道与噪声 |
 | `rt_channel.py` | Sionna RT 场景、撒点、链路预算、CIR → 频域信道 |

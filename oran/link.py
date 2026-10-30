@@ -74,10 +74,11 @@ class ORANDownlink:
         self.pdsch_configs = make_pdsch_configs(cfg)
         self.rg = make_resource_grid(cfg, self.pdsch_configs, precision, device)
         self.odu = ODU(cfg, self.pdsch_configs, self.rg, precision, device)
+        self.precision = precision
         self.air = None
-        if cfg.domain == "time":
+        if cfg.domain == "time" or cfg.category == "8":     # option 8 的 O-DU 也要做 IFFT + CP
             self.air = make_air_numerology(cfg, self.pdsch_configs[0], precision, device)
-        self.fronthaul = [FronthaulLink(cfg, o) for o in range(cfg.num_oru)]
+        self.fronthaul = self._make_fronthaul()
         self.orus = [ORU(cfg, self.air, o, precision=precision, device=device)
                      for o in range(cfg.num_oru)]
         self.channel = DownlinkChannel(cfg, self.rg, self.air, precision, device)
@@ -87,6 +88,10 @@ class ORANDownlink:
         # CSI 参考符号：第一个 DMRS 符号
         self.csi_symbol = self.pdsch_configs[0].dmrs_symbol_indices[0]
         self.mcs = [cfg.mcs_of(k) for k in range(cfg.num_ue)]
+
+    def _make_fronthaul(self) -> List[FronthaulLink]:
+        return [FronthaulLink(self.cfg, o, self.air, self.precision, self.device)
+                for o in range(self.cfg.num_oru)]
 
     @property
     def tb_sizes(self) -> List[int]:
@@ -184,7 +189,7 @@ class ORANDownlink:
         self.cfg.uplane = uplane
         if bfw is not None:
             self.cfg.bfw = bfw
-        self.fronthaul = [FronthaulLink(self.cfg, o) for o in range(self.cfg.num_oru)]
+        self.fronthaul = self._make_fronthaul()
 
     @torch.no_grad()
     def run_batch(self, batch_size: int, snr_db: float, stats: Optional[LinkStats] = None,

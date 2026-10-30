@@ -8,6 +8,9 @@
 
 前传只承载 PRB（12·num_prb 个子载波）。IFFT 点数按 NR 惯例取不小于 num_sc/0.85 的最小 2 的幂，
 例如 30 kHz 下 51 PRB（20 MHz）为 1024 点、30.72 Msps，273 PRB（100 MHz）为 4096 点。
+
+option 8 的 O-RU 只有 DAC 和射频。前传送来的是时域 IQ，FronthaulLink 把它换算成 PRB 上的频域等效网格
+（见 :class:`oran.fronthaul.TimeDomainCodec`），这里与 Cat A 一样直通。
 """
 
 from dataclasses import dataclass
@@ -51,7 +54,7 @@ class AirNumerology:
 
 def make_air_numerology(cfg: ORANConfig, pdsch_config, precision=None, device=None) -> AirNumerology:
     num_sc = cfg.num_subcarriers
-    fft_size = cfg.fft_size or int(2 ** np.ceil(np.log2(num_sc / 0.85)))
+    fft_size = cfg.ifft_size()
     if fft_size < num_sc:
         raise ValueError("fft_size 不能小于子载波数")
     scs = cfg.subcarrier_spacing * 1e3

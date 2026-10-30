@@ -12,6 +12,10 @@
 数据时隙的 PDSCH 都经过同一个压缩前传。UE 静止，每个撒点的信道只算一次；同一撒点、同一周期内，
 各位宽、各 CQI 来源的比特和噪声相同（配对比较），选出相同 MCS 的 CQI 来源共用同一次 PDSCH 仿真。
 
+切分：7.2x Cat A、Cat B，以及 3GPP split option 8（--categories 8）。option 8 由 O-DU 做 IFFT + CP，前传传各天线的
+时域 IQ；3GPP 不规定其压缩，默认按 CPRI 做每个 I/Q 分量 w bit 的均匀定点（--o8-method fixed，削波电平按位宽取最优），
+位宽另用 --o8-widths 扫描（默认含 TR 38.801 附录 A 的 16 bit）。Cat A 即 Girycki 等论文中的 7-1（波束赋形在 DU）。
+
 默认只用 CPU（射线追踪走 Mitsuba 的 LLVM 后端）：WSL 笔记本的 RTX 4060 在持续负载下会读错显存
 （LDPC 译码结果不确定、下标越界断言，纯 PyTorch 的类 BP 循环也能复现，见 README）。
 --device cuda:0 才使用 GPU；GPU 的 OptiX 不可用时再加 --rt-llvm，射线追踪改用 CPU。
@@ -22,8 +26,8 @@
     python cqi_compression/analyse_cqi_bler.py results/cqi_compression_20261029/main
 
 输出（--out 目录）：metadata.json、源码快照、rows.jsonl（每行一个 Cat × 撒点 × 位宽 × CQI 来源 × UE）、
-codec_sqnr.json（各压缩算法、各位宽在实际 U-plane 信号上的 SQNR）、complete.json
-（recheck_mismatches 为复核不一致的（撒点, 位宽）个数，不为 0 时结果作废）。
+codec_sqnr.json（各压缩算法、各位宽在实际 U-plane 信号上的 SQNR；option 8 为 PRB 上的 SQNR，"8-time" 为时域 SQNR）、
+complete.json（recheck_mismatches 为复核不一致的（撒点, 位宽）个数，不为 0 时结果作废）。
 """
 
 import argparse
@@ -55,7 +59,7 @@ import torch  # noqa: E402
 from aware_cqi import measure_cqi_aware, measure_cqi_oracle  # noqa: E402
 from oran import ClosedLoopDownlink, CompressionConfig, LinkAdaptationConfig, ORANConfig  # noqa: E402
 from oran.channel import ChannelState  # noqa: E402
-from oran.fronthaul import IQCodec, fronthaul_rate  # noqa: E402
+from oran.fronthaul import IQCodec, TimeDomainCodec, fronthaul_rate  # noqa: E402
 from runio import Run  # noqa: E402
 
 SOURCES = ("genie", "csi-rs", "aware", "oracle")
@@ -64,10 +68,15 @@ SQNR_METHODS = ("bfp", "block_scaling", "mu_law")
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--categories", nargs="+", default=["A", "B"], choices=["A", "B"])
-    p.add_argument("--method", default="block_scaling")
+    p.add_argument("--categories", nargs="+", default=["A", "B", "8"], choices=["A", "B", "8"],
+                   help="A / B：7.2x Cat A / B；8：split option 8（时域 IQ）")
+    p.add_argument("--method", default="block_scaling", help="Cat A / B 的 U-plane 压缩算法")
     p.add_argument("--widths", nargs="+", default=["ideal", "9", "8", "7", "6", "5", "4", "3"])
     p.add_argument("--bfw", default="same", help="Cat B 权值压缩：same（与 U-plane 相同）或 ideal / 整数位宽")
+    p.add_argument("--o8-method", default="fixed",
+                   help="option 8 的时域量化：fixed（CPRI 式均匀定点，默认）或 bfp / block_scaling / mu_law（时域分块，非标准）")
+    p.add_argument("--o8-widths", nargs="+", default=["ideal", "16", "12", "9", "8", "7", "6", "5", "4", "3"],
+                   help="option 8 每个 I/Q 分量的位宽")
     p.add_argument("--drops", type=int, default=40)
     p.add_argument("--periods", type=int, default=4, help="每个撒点的 CSI-RS 周期数（不需要 OLLA 收敛期）")
     p.add_argument("--batch-size", type=int, default=7, help="每周期的数据时隙数")
@@ -86,9 +95,20 @@ def compression(method, width):
     return CompressionConfig("ideal", 16) if width == "ideal" else CompressionConfig(method, int(width))
 
 
+def cat_label(cat):
+    return "option 8" if cat == "8" else f"Cat {cat}"
+
+
 def finite(x):
     """理想前传的 SQNR 为 inf，JSON 中记为 null。"""
     return float(x) if x is not None and np.isfinite(x) else None
+
+
+def time_sqnr_db(sim):
+    """option 8 各 O-RU 链路合并的时域（全带宽）SQNR [dB]。"""
+    stats = [fh.uplane.time_stats for fh in sim.fronthaul]
+    err = sum(s.error_energy for s in stats)
+    return 10 * np.log10(sum(s.signal_energy for s in stats) / err) if err > 0 else None
 
 
 def seed_for(args, drop, period, tag):
@@ -98,20 +118,31 @@ def seed_for(args, drop, period, tag):
 
 @torch.no_grad()
 def codec_sqnr(cl, state, widths):
-    """实际 U-plane 信号上各压缩算法、各位宽的 SQNR [dB]（μ 律位宽须 ≥ 3）。"""
+    """实际 U-plane 信号上各压缩算法、各位宽的 SQNR [dB]（μ 律位宽须在 3~15 内）。
+
+    option 8 另含 fixed（均匀定点），三种分块算法作用在时域样点上；返回 (PRB 上的 SQNR, 时域 SQNR)，
+    7.2x 的时域 SQNR 为空。
+    """
     sim, cfg = cl.sim, cl.cfg
     one = ChannelState(state.h_freq[:1])
     tx = sim.odu(1, sim.channel.csi(one, sim.csi_symbol))
-    power = 1.0 / cfg.num_tx_ant if cfg.category == "A" else 1.0
-    out = {}
-    for method in SQNR_METHODS:
+    power = 1.0 / cfg.num_tx_ant if cfg.category in ("A", "8") else 1.0
+    methods = ("fixed",) + SQNR_METHODS if cfg.category == "8" else SQNR_METHODS
+    out, out_time = {}, {}
+    for method in methods:
         for w in widths:
-            if w == "ideal" or (method == "mu_law" and int(w) < 3):
+            if w == "ideal" or (method == "mu_law" and not 3 <= int(w) <= 15):
                 continue
-            codec = IQCodec(CompressionConfig(method, int(w)), power, block_len=12)
-            codec(tx.uplane[0])
+            comp = CompressionConfig(method, int(w))
+            if cfg.category == "8":
+                codec = TimeDomainCodec(comp, sim.air, power, sim.precision, sim.device)
+                codec(tx.uplane[0])
+                out_time[f"{method}:{w}"] = codec.time_stats.sqnr_db
+            else:
+                codec = IQCodec(comp, power, block_len=12)
+                codec(tx.uplane[0])
             out[f"{method}:{w}"] = codec.stats.sqnr_db
-    return out
+    return out, out_time
 
 
 def pdsch(cl, args, drop, period, mcs, state):
@@ -172,19 +203,24 @@ def main():
     duration = args.periods * args.batch_size
 
     for cat in args.categories:
-        bfw_of = lambda w: compression(args.method, w if args.bfw == "same" else args.bfw)
+        widths = args.o8_widths if cat == "8" else args.widths
+        method = args.o8_method if cat == "8" else args.method
+        uplane_of = lambda w: compression(method, w)
+        bfw_of = lambda w: compression(args.method, w if args.bfw == "same" else args.bfw) if cat == "B" else None
         cfg = ORANConfig(channel_model="rt", category=cat, num_ue=args.num_ue,
                          num_layers_per_ue=args.layers_per_ue, num_prb=args.num_prb,
                          mcs_table=args.mcs_table, cqi_source="csi-rs", device=args.device,
-                         uplane=compression(args.method, args.widths[0]), bfw=bfw_of(args.widths[0]))
+                         uplane=uplane_of(widths[0]), bfw=bfw_of(widths[0]) or CompressionConfig("ideal", 16))
         t0 = time.time()
         cl = ClosedLoopDownlink(cfg, la_cfg)
         import mitsuba as mi
-        print(f"Cat {cat}：初始化 {time.time() - t0:.1f} s（链路 {args.device}，射线追踪 {mi.variant()}）", flush=True)
+        print(f"{cat_label(cat)}：初始化 {time.time() - t0:.1f} s（链路 {args.device}，射线追踪 {mi.variant()}）",
+              flush=True)
         rates = {}
-        for w in args.widths:
-            cl.set_compression(compression(args.method, w), bfw_of(w))
-            rates[w] = fronthaul_rate(cfg, num_prb=args.num_prb).total / 1e9
+        for w in widths:
+            cl.set_compression(uplane_of(w), bfw_of(w))
+            r = fronthaul_rate(cfg, num_prb=args.num_prb)
+            rates[w] = (r.total / 1e9, r.uplane_payload / 1e9)
         for i in range(args.drops):
             t = time.time()
             if len(positions_list) <= i:                    # 第一个 Cat 撒点（drop 已放置 UE 并做射线追踪）
@@ -197,13 +233,16 @@ def main():
             state = cl.sim.channel.sample(args.batch_size)  # 静止 UE：各周期信道相同
             cqi_g, eff_g = cl.measure_cqi_genie(state)
             if i == 0:
-                sqnr[cat] = codec_sqnr(cl, state, args.widths)
+                sqnr[cat], sqnr_time = codec_sqnr(cl, state, widths)
+                if sqnr_time:
+                    sqnr[f"{cat}-time"] = sqnr_time
             line = []
-            for w in args.widths:
-                cl.set_compression(compression(args.method, w), bfw_of(w))
+            for w in widths:
+                cl.set_compression(uplane_of(w), bfw_of(w))
                 rec, evm, recheck_ok = run_width(cl, args, i, state, cqi_g, eff_g)
                 mismatches += not recheck_ok
                 fh = cl.sim.fronthaul_stats()
+                sqnr_t = finite(time_sqnr_db(cl.sim)) if cat == "8" else None
                 for src in SOURCES:
                     r = {k: np.array(v) for k, v in rec[src].items()}   # [periods, K]
                     for k in range(cfg.num_ue):
@@ -219,14 +258,15 @@ def main():
                             bler=float(r["errors"][:, k].sum() / duration),
                             throughput_mbps=delivered / (duration / cfg.slots_per_second) / 1e6,
                             data_sinr_db=float(10 * np.log10(ref / max(err, 1e-30))),
-                            uplane_sqnr_db=finite(fh["uplane"].sqnr_db),
+                            uplane_sqnr_db=finite(fh["uplane"].sqnr_db), uplane_sqnr_time_db=sqnr_t,
                             bfw_sqnr_db=finite(fh["bfw"].sqnr_db) if "bfw" in fh else None,
-                            fronthaul_gbps=rates[w], recheck_ok=recheck_ok))
+                            fronthaul_gbps=rates[w][0], fronthaul_payload_gbps=rates[w][1],
+                            recheck_ok=recheck_ok))
                 bler = {s: np.array(rec[s]["errors"]).sum() / (duration * cfg.num_ue) for s in SOURCES}
                 line.append(f"{w}: " + "/".join(f"{bler[s]:.2f}" for s in SOURCES)
                             + ("" if recheck_ok else " 复核不一致！"))
             snr_txt = " ".join(f"{v:5.1f}" for v in snr)
-            print(f"Cat {cat} 撒点 {i:3d} | SNR {snr_txt} dB | CQI(精灵) {cqi_g.tolist()} | "
+            print(f"{cat_label(cat)} 撒点 {i:3d} | SNR {snr_txt} dB | CQI(精灵) {cqi_g.tolist()} | "
                   f"BLER genie/csi-rs/aware/oracle：{' | '.join(line)} | {time.time() - t:.1f} s", flush=True)
             run.f.flush()
         del cl

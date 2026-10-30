@@ -6,6 +6,8 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Union
 
+import numpy as np
+
 
 @dataclass
 class CompressionConfig:
@@ -59,7 +61,9 @@ class ORANConfig:
     """O-RAN 7.2x 下行链路级仿真配置（默认：单小区、1 个 O-RU、2 个 UE 的 MU-MIMO）。"""
 
     # ---- 功能划分 ----
-    category: str = "A"                 # "A"：预编码在 O-DU；"B"：预编码在 O-RU
+    # "A"：7.2x Cat A，预编码在 O-DU；"B"：7.2x Cat B，预编码在 O-RU；
+    # "8"：3GPP split option 8（PHY-RF），O-DU 做到 IFFT + CP，前传传各天线的时域 IQ，O-RU 只剩射频
+    category: str = "A"
 
     # ---- 载波 ----
     subcarrier_spacing: int = 30        # kHz
@@ -91,6 +95,8 @@ class ORANConfig:
     prg_size: int = 2                   # 预编码粒度（PRB），0 表示宽带（全带宽一个预编码）
 
     # ---- 前传 ----
+    # option 8 时为时域样点的量化："fixed" 为 CPRI 式均匀定点（每个 I/Q 分量 iq_width 位，按位宽取最优削波电平），
+    # 也可用 bfp / block_scaling / mu_law 对时域样点分块压缩（块长 TIME_BLOCK_LEN，非标准，作对照）
     uplane: CompressionConfig = field(default_factory=CompressionConfig)
     # Cat B 的 C-plane 波束赋形权值压缩（bfwCompMeth / bfwIqWidth）
     bfw: CompressionConfig = field(default_factory=lambda: CompressionConfig("bfp", 9))
@@ -156,6 +162,16 @@ class ORANConfig:
     def num_prg(self) -> int:
         return -(-self.num_prb // self.prg_num_prb)
 
+    def ifft_size(self, num_prb: Optional[int] = None) -> int:
+        """IFFT 点数：未给出 fft_size 时取不小于子载波数 / 0.85 的最小 2 的幂（30 kHz 下 51 PRB 为 1024）。
+
+        :param num_prb: 另行指定的 PRB 数（如估算 100 MHz 的前传比特率时取 273），此时按默认规则计算
+        """
+        if self.fft_size and (num_prb is None or num_prb == self.num_prb):
+            return self.fft_size
+        num_sc = 12 * (self.num_prb if num_prb is None else num_prb)
+        return int(2 ** np.ceil(np.log2(num_sc / 0.85)))
+
     def mcs_of(self, ue: int) -> int:
         if isinstance(self.mcs_index, int):
             return self.mcs_index
@@ -165,8 +181,10 @@ class ORANConfig:
         return 100 + ue if self.rnti is None else list(self.rnti)[ue]
 
     def validate(self) -> None:
-        if self.category not in ("A", "B"):
-            raise ValueError("category 必须为 'A' 或 'B'")
+        if self.category not in ("A", "B", "8"):
+            raise ValueError("category 必须为 'A'、'B' 或 '8'")
+        if self.uplane.method == "fixed" and self.category != "8":
+            raise ValueError("uplane.method='fixed'（时域均匀定点）只用于 option 8")
         if self.domain not in ("freq", "time"):
             raise ValueError("domain 必须为 'freq' 或 'time'")
         if self.channel_model not in ("cdl", "rt"):

@@ -3,6 +3,7 @@
 运行：python -m unittest discover -s tests -v
 """
 
+import math
 import unittest
 
 import numpy as np
@@ -11,7 +12,7 @@ import torch
 
 from oran import CompressionConfig, ORANConfig, ORANDownlink
 from oran.channel_estimation import PRGLinearInterpolator
-from oran.fronthaul import fronthaul_rate
+from oran.fronthaul import fronthaul_rate, gaussian_loading_db
 from oran.precoding import compute_precoder
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -42,6 +43,28 @@ class TestLink(unittest.TestCase):
         xa = self._antenna_signal(small_config(category="A", uplane=IDEAL))
         xb = self._antenna_signal(small_config(category="B", uplane=IDEAL, bfw=IDEAL))
         self.assertLess(float((xa - xb).abs().max()), 1e-5)
+
+    def test_option8_equals_cat_a_without_compression(self):
+        xa = self._antenna_signal(small_config(category="A", uplane=IDEAL))
+        x8 = self._antenna_signal(small_config(category="8", uplane=IDEAL))
+        self.assertTrue(torch.equal(xa, x8))
+
+    def test_option8_fixed_point_sqnr(self):
+        # 时域 SQNR 不超过高斯分量最优均匀量化的 SQNR；定点增益按全链路平均功率设定，各天线功率相差约 ±1.5 dB，
+        # 所以实际低 1~2 dB。量化噪声均匀落在全部 IFFT 点上，PRB 上的 SQNR 再高 10·log10(IFFT 点数 / 子载波数)
+        sionna.phy.config.seed = 7
+        sim = ORANDownlink(small_config(category="8", uplane=CompressionConfig("fixed", 8)))
+        state = sim.channel.sample(4)
+        tx = sim.odu(4, sim.channel.csi(state, sim.csi_symbol))
+        codec = sim.fronthaul[0].uplane
+        codec(tx.uplane[0])
+        k = 10 ** (gaussian_loading_db(8) / 20)
+        tail = (1 + k * k) * 0.5 * math.erfc(k / math.sqrt(2)) - k * math.exp(-k * k / 2) / math.sqrt(2 * math.pi)
+        sqnr_time = -10 * np.log10((k / 128) ** 2 / 12 + 2 * tail)
+        gain = 10 * np.log10(sim.air.fft_size / sim.air.num_sc)
+        self.assertLess(codec.time_stats.sqnr_db, sqnr_time + 0.3)
+        self.assertGreater(codec.time_stats.sqnr_db, sqnr_time - 3.0)
+        self.assertAlmostEqual(codec.stats.sqnr_db - codec.time_stats.sqnr_db, gain, delta=0.3)
 
     def test_cat_a_and_b_differ_with_compression(self):
         comp = CompressionConfig("bfp", 5)
@@ -108,6 +131,18 @@ class TestLink(unittest.TestCase):
         cfg.uplane = CompressionConfig("bfp", 9)
         bfp = fronthaul_rate(cfg, num_prb=273)
         self.assertAlmostEqual(bfp.uplane_payload / rate.uplane_payload, 224 / 384, places=6)
+
+    def test_option8_rate_matches_tr38801(self):
+        # TR 38.801 表 11.1.4.2-1：20 MHz、2 天线、位宽 30（2×15）为 2 × 30.72 Msps × 30 bit
+        cfg = ORANConfig(category="8", num_ue=1, num_oru_ant=2, uplane=CompressionConfig("fixed", 15))
+        self.assertAlmostEqual(fronthaul_rate(cfg).uplane_payload / 1e9, 2 * 30.72 * 30 / 1e3, places=6)
+        # 附录 A 表 A-1：100 MHz、32 天线、2×16 bit 为 157.3 Gbps，按 LTE 的 153.6 Msps 计算；
+        # NR 100 MHz（273 PRB，4096 点）的采样率为 122.88 Msps，恰为其 4/5
+        cfg = ORANConfig(category="8", num_ue=1, num_oru_ant=32, uplane=CompressionConfig("fixed", 16))
+        rate = fronthaul_rate(cfg, num_prb=273)
+        self.assertAlmostEqual(rate.uplane_payload * 1.25 / 1e9, 157.3, delta=0.05)
+        self.assertEqual(rate.cplane_total, 0.0)
+        self.assertLess(rate.uplane_total / rate.uplane_payload, 1.05)
 
 
 if __name__ == "__main__":
