@@ -11,7 +11,7 @@
 | Q4 | 检查 `--rt-llvm`（链路 GPU、射线追踪 CPU） | `--device cuda:0 --rt-llvm --drops 1 --periods 1 --widths ideal --categories A` | 本机 GPU + LLVM | `rtllvm_check/` | 完成：Mitsuba 变体为 llvm_ad_mono_polarized |
 | Q5 | 正式运行 | `--device cuda:0 --drops 50`（按 `colab_continue.ipynb`） | Colab A100-SXM4-80GB，torch 2.11.0+cu130，射线追踪 cuda_ad_mono_polarized | Drive 上的 `main/`；本机 `colab_main/`（从笔记本输出提取的报告、日志、图，无 rows.jsonl） | 完成 2026-10-29，约 14.5 分钟。GPU 自检两项 PASS，日志中无复核不一致。结论见 README"结果" |
 | Q6 | 冒烟测试：加入 split option 8 后的流程、笔记本打包与本机解包 | `--drops 2 --periods 1 --widths ideal 5 --o8-widths ideal 8 5`（`--categories` 默认 A B 8） | 另一台电脑的 WSL Ubuntu 22.04 CPU，torch 2.15.0+cpu，射线追踪 llvm_ad_mono_polarized（LLVM 18） | `cqi_compression_20261030/smoke_local/` | 完成 2026-10-30，约 4 分钟，112 行，`recheck_mismatches` = 0。见下 |
-| Q7 | 正式运行：Cat A、Cat B、option 8 同一批撒点 | `--device cuda:0 --drops 50 --categories A B 8`（按 `colab_continue.ipynb`） | Colab GPU | 运行时 `/content/results/cqi_compression_20261030/main/`，经笔记本输出取回本机 `cqi_compression_20261030/colab_main/` | 待运行 |
+| Q7 | 正式运行：Cat A、Cat B、option 8 同一批撒点 | `--device cuda:0 --drops 50 --categories A B 8`（按 `colab_continue.ipynb`） | Colab Tesla T4，torch 2.11.0+cu130，射线追踪 cuda_ad_mono_polarized | 运行时 `/content/results/cqi_compression_20261030/main/`，经笔记本输出取回本机 `cqi_compression_20261030/colab_main/`（含 rows.jsonl） | 完成 2026-10-30，约 85 分钟，10,400 行，`recheck_mismatches` = 0。见下，结论见 README"结果：split option 8" |
 
 ## Q5 的登记
 
@@ -27,3 +27,14 @@
 - 作对照的时域分块算法（每块 16 个样点）在第一个撒点上 8 bit 时：块缩放 47.6 dB、μ 律 45.4 dB、BFP 44.8 dB，都高于均匀定点的 42.6 dB；但每个样点多出 0.5 bit 的压缩参数。
 - CPU 耗时：每个撒点每个位宽约 15–25 秒，option 8 与 Cat A 相当。
 - 笔记本第 7 单元的打包代码在本机对 `smoke_local/` 执行，输出写进笔记本副本，再用 `extract_colab_results.py` 解压：rows.jsonl 与原文件逐行相同，sha256 校验通过，`analyse_cqi_bler.py` 能在 Windows 的 Python 上汇总并画出两张图。
+
+## Q7 的登记
+
+- 运行：开始 08:47:15Z，结束 10:12:24Z（UTC）。分配到的是 T4，不是笔记本里估算时假定的 A100；每个撒点 Cat A 约 32 s、Cat B 约 31 s、option 8 约 38 s，约为 Q5（A100）的 4 倍。
+- 代码：`metadata.json` 记录 git 版本 f0cc68d。源码快照 `source_run_cqi_bler.py` 的 sha256 与本机文件换成 LF 换行后的 sha256 相同。
+- 取回：在 VS Code 中保存笔记本后，`extract_colab_results.py` 解压出 8 个文件，sha256 校验通过；先解压到临时目录核对，再解压到 `colab_main/`，两份 rows.jsonl 相同。随后在本机运行 `analyse_cqi_bler.py`，生成 `report.txt` 和两张图。
+- 汇总：300 个 UE-撒点中排除 33 个，每个 Cat 11 个。option 8 的理想前传与 Cat A 的理想前传逐项相同。Cat A/B 与 Q5 的 BLER 相差都不超过 0.025。
+- CSI-RS 能否测到失真：用 rows.jsonl 计算 genie 与 csi-rs 的有效 SINR 之差（UE-撒点平均，排除后 89 个）。
+  - 5 bit 时：option 8 为 7.0 dB，Cat A 为 3.8 dB，Cat B 为 3.1 dB。
+  - 对比 genie 与 oracle 之差：option 8 为 7.7 dB，Cat A 为 7.2 dB，Cat B 为 5.6 dB。
+- 笔记本中还保留着这次运行的输出：结果包 0.57 MB，base64 编码后连同两张图，整个笔记本约 1.7 MB。按 README 的做法，提交前应清空输出。
