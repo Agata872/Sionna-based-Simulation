@@ -79,35 +79,35 @@ w bit 的均匀定点量化（`CompressionConfig("fixed", w)`，削波电平按�
 ## 快速开始
 
 逐模块演示完整闭环流程（带开关，可切换信道、Cat A/B、压缩、SU/MU、CQI 来源等）：
-[`notebooks/closed_loop_walkthrough.ipynb`](../notebooks/closed_loop_walkthrough.ipynb)。
+[`studies/oran_baseline/closed_loop_walkthrough.ipynb`](../studies/oran_baseline/closed_loop_walkthrough.ipynb)。
 
 ```bash
 cd "/home/user/Sionna-based Simulation"
 source env.sh
 python -m unittest discover -s tests -v          # 单元测试，约 45 秒
-python scripts/compare_cat_a_b.py --widths ideal 9 5 --snr 16 30 2 --max-batches 5   # 快速试跑
-python scripts/compare_cat_a_b.py --widths ideal 7 bs:7 mu:7 --bfw-width bs:9        # 比较压缩算法
+python studies/oran_baseline/compare_cat_a_b.py --widths ideal 9 5 --snr 16 30 2 --max-batches 5   # 快速试跑
+python studies/oran_baseline/compare_cat_a_b.py --widths ideal 7 bs:7 mu:7 --bfw-width bs:9        # 比较压缩算法
 
 # 完整扫描（Cat A/B × 压缩位宽 × SNR）：两块 GPU 各跑一类，再合并画图
 # Sionna 的随机种子按设备序号偏移，用 CUDA_VISIBLE_DEVICES 让两个进程都在 "cuda:0" 上运行，
 # 两边的比特、信道、噪声才完全相同（配对比较）
-CUDA_VISIBLE_DEVICES=0 python scripts/compare_cat_a_b.py --categories A --out results/cat_a &
-CUDA_VISIBLE_DEVICES=1 python scripts/compare_cat_a_b.py --categories B --out results/cat_b &
+CUDA_VISIBLE_DEVICES=0 python studies/oran_baseline/compare_cat_a_b.py --categories A --out results/cat_a &
+CUDA_VISIBLE_DEVICES=1 python studies/oran_baseline/compare_cat_a_b.py --categories B --out results/cat_b &
 wait
-python scripts/compare_cat_a_b.py --merge results/cat_a results/cat_b --out results/cat_ab
+python studies/oran_baseline/compare_cat_a_b.py --merge results/cat_a results/cat_b --out results/cat_ab
 
 # 闭环：munich 场景随机撒点，CQI → MCS → OLLA（结果与图在 results/rt_su、results/rt_mu）
-python scripts/rt_closed_loop.py --drops 5 --batches 8                 # 快速试跑（单 UE）
-python scripts/rt_closed_loop.py --num-ue 1                            # SU-MIMO，30 个撒点
-python scripts/rt_closed_loop.py --num-ue 2                            # 2 UE MU-MIMO（BD）
-python scripts/rt_closed_loop.py --num-ue 2 --category B --uplane bfp:7 --bfw bfp:7 --out results/rt_mu_b7
-python scripts/rt_closed_loop.py --cqi-source genie                    # 对照：精灵 CQI（不发 CSI-RS）
+python studies/oran_baseline/rt_closed_loop.py --drops 5 --batches 8                 # 快速试跑（单 UE）
+python studies/oran_baseline/rt_closed_loop.py --num-ue 1                            # SU-MIMO，30 个撒点
+python studies/oran_baseline/rt_closed_loop.py --num-ue 2                            # 2 UE MU-MIMO（BD）
+python studies/oran_baseline/rt_closed_loop.py --num-ue 2 --category B --uplane bfp:7 --bfw bfp:7 --out results/rt_mu_b7
+python studies/oran_baseline/rt_closed_loop.py --cqi-source genie                    # 对照：精灵 CQI（不发 CSI-RS）
 
 # 闭环中比较 Cat A/B 的压缩失真：先生成撒点文件，两块 GPU 各跑一类（同一批撒点上依次跑各压缩配置），再合并
-python scripts/rt_compare_compression.py --num-ue 2 --save-drops results/drops_mu.json
-CUDA_VISIBLE_DEVICES=0 python scripts/rt_compare_compression.py --categories A --drops-file results/drops_mu.json --out results/csi_mu_a &
-CUDA_VISIBLE_DEVICES=1 python scripts/rt_compare_compression.py --categories B --drops-file results/drops_mu.json --out results/csi_mu_b &
-wait; python scripts/rt_compare_compression.py --merge results/csi_mu_a results/csi_mu_b --out results/csi_mu
+python studies/oran_baseline/rt_compare_compression.py --num-ue 2 --save-drops results/drops_mu.json
+CUDA_VISIBLE_DEVICES=0 python studies/oran_baseline/rt_compare_compression.py --categories A --drops-file results/drops_mu.json --out results/csi_mu_a &
+CUDA_VISIBLE_DEVICES=1 python studies/oran_baseline/rt_compare_compression.py --categories B --drops-file results/drops_mu.json --out results/csi_mu_b &
+wait; python studies/oran_baseline/rt_compare_compression.py --merge results/csi_mu_a results/csi_mu_b --out results/csi_mu
 ```
 
 在代码中使用：

@@ -18,11 +18,11 @@ results/
 .idea/
 
 # LaTeX 编译产物
-paper1/manuscript/*.aux
-paper1/manuscript/*.bbl
-paper1/manuscript/*.blg
-paper1/manuscript/*.fdb_latexmk
-paper1/manuscript/*.fls
-paper1/manuscript/*.log
-paper1/manuscript/*.out
-paper1/manuscript/*.synctex.gz
+studies/twin_ci_compression/paper1/manuscript/*.aux
+studies/twin_ci_compression/paper1/manuscript/*.bbl
+studies/twin_ci_compression/paper1/manuscript/*.blg
+studies/twin_ci_compression/paper1/manuscript/*.fdb_latexmk
+studies/twin_ci_compression/paper1/manuscript/*.fls
+studies/twin_ci_compression/paper1/manuscript/*.log
+studies/twin_ci_compression/paper1/manuscript/*.out
+studies/twin_ci_compression/paper1/manuscript/*.synctex.gz

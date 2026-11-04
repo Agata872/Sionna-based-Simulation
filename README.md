@@ -16,25 +16,57 @@
 
 ## 目录结构
 
+第一级放各方向共用的东西（标准文档、参考论文、仿真库、工具函数、测试），各研究方向放在 `studies/` 下，
+每个方向自带脚本、验证和研究记录。
+
 ```
 Sionna-based Simulation/
-├── .venv/              # Python 虚拟环境，所有依赖都在这里（不纳入 git）
-├── sionna/             # 官方仓库 v2.2.0 源码（git 子模块，含 sionna-rt 子模块）
-│   └── tutorials/      #   phy/ 链路级、sys/ 系统级、rt/ 射线追踪 教程
-├── oran/               # O-RAN 7.2x 下行 Cat A / Cat B 链路级仿真（说明见 oran/README.md）
-│   └── compression/    #   前传 IQ 压缩算法（BFP 等）
-├── scripts/            # 仿真脚本，如 compare_cat_a_b.py（Cat A/B × 压缩位宽 × SNR 扫描）
-├── cqi_compression/    # CQI 查表时是否考虑前传压缩对 BLER 的影响（含 Colab 笔记本、GPU 自检）
-├── tests/              # 单元测试：python -m unittest discover -s tests -v
-├── results/            # 仿真输出（不纳入 git）
-├── env.sh              # 激活环境（终端用）
-├── .env                # VS Code 启动 Python / Jupyter 内核时读取的环境变量
-├── verify_env.py       # 环境验证脚本
-├── requirements.txt    # 锁定的依赖版本
+├── 3GPP and ORAN report/   # 3GPP / O-RAN 标准与规范 PDF（不纳入 git）
+├── Paper reference/        # 参考论文 PDF（不纳入 git）
+├── oran/                   # 公共仿真库：O-RAN 7.2x 下行 Cat A / Cat B / split 8 链路级仿真、RT 闭环（说明见 oran/README.md）
+│   └── compression/        #   前传 IQ 压缩算法（BFP、块缩放、μ 律）
+├── common/                 # 各方向共用的工具函数
+│   └── runio.py            #   运行目录记录：Run（自动写 metadata 与源码快照）、Recorder、read_rows
+├── tests/                  # oran/ 的单元测试：python -m unittest discover -s tests -v
+├── studies/                # 各研究方向（见下节"研究方向"）
+│   ├── oran_baseline/
+│   ├── csirs_du_ru/
+│   ├── srsbf/
+│   ├── twin_ci_compression/
+│   └── dynamic_split/
+├── results/                # 仿真输出（不纳入 git），各方向对应哪些子目录见该方向的 README
+├── sionna/                 # 官方仓库 v2.2.0 源码（git 子模块，含 sionna-rt 子模块）
+│   └── tutorials/          #   phy/ 链路级、sys/ 系统级、rt/ 射线追踪 教程
+├── .venv/                  # Python 虚拟环境，所有依赖都在这里（不纳入 git）
+├── env.sh                  # 激活环境（终端用）
+├── .env                    # VS Code 启动 Python / Jupyter 内核时读取的环境变量
+├── verify_env.py           # 环境验证脚本
+├── requirements.txt        # 锁定的依赖版本
 └── README.md
 
 ~/.local/nvidia/580.178.04/   # 580 驱动的用户态库（不纳入 git，安装方法见注意事项 2）
 ```
+
+## 研究方向
+
+按时间顺序。每个方向的 README 写明要回答的问题、文件表（运行 / 汇总 / 诊断 / 验证）和对应的 `results/` 子目录，
+各轮的研究记录在该方向的 `notes/` 中。
+
+| 方向 | 时间 | 内容 | 状态 |
+|---|---|---|---|
+| [oran_baseline](studies/oran_baseline/README.md) | 2026-10-04 ~ 05 | `oran/` 仿真器的基线验证：Cat A/B × 压缩位宽 × SNR；射线追踪闭环中 CSI-RS / CQI / OLLA 能看到多少压缩失真 | 完成 |
+| [csirs_du_ru](studies/csirs_du_ru/README.md) | 2026-10-06 | 调研与第 1–3 轮：研究现状；CSI-RS 压缩与 DU–RU 预编码协作（权值表示、信息时效、协作消息预算、RU 自主预编码后的 MCS 决策） | 结束，问题转入第 4 轮 |
+| [srsbf](studies/srsbf/README.md) | 2026-10-07 | 第 4 轮：O-RU 侧 SRS 波束赋形下 O-DU 的多用户调度与链路自适应 | 方向已修正（把 O-RAN 接口本身当成了研究对象），由第 5 轮取代 |
+| [twin_ci_compression](studies/twin_ci_compression/README.md) | 2026-10-07 ~ 11 | 第 5–8 轮与第一篇论文：数字孪生（信道知识图）辅助的 cell-free 前传信道信息压缩（URTS-CODE）；第 8 轮是 CSI-RS 压缩调研和第二篇方案 | 第一篇有初稿；第二篇暂停 |
+| [dynamic_split](studies/dynamic_split/README.md) | 2026-10-12 起 | Girycki 等（EuCNC 2024）的扩展：动态切分 + 压缩 + CI；期刊扩展的验证实验在其 `cqi_compression/` 下 | 阶段 0–14 完成；期刊扩展验证 V-a 完成，V-b、V-c 未开始 |
+
+**约定**
+- 脚本都从仓库根目录运行：`python studies/<方向>/<脚本>.py`。脚本自己把仓库根目录加入 `sys.path`，
+  以导入 `oran/` 与 `common/`；同一方向内的脚本按模块名互相导入。
+- 每次运行写到 `results/` 下带日期的目录，保存 metadata、源码快照、逐行结果和日志（`common/runio.py`），
+  并登记在该方向的实验索引中（`experiments.md`；早期方向登记在 `notes/` 的轮次记录里）。
+- 新方向：在 `studies/` 下新建文件夹，放 `README.md`、`notes/`（研究记录）和脚本；
+  被两个以上方向用到的函数移到 `common/`。
 
 ## 快速开始
 
@@ -59,14 +91,16 @@ sionna.phy.config.seed = 42
 ## O-RAN 7.2x 下行链路仿真
 
 `oran/` 基于 Sionna PHY 实现了 O-RAN 7.2x 划分下的 PDSCH 下行链路（单小区、2 个 UE 的 MU-MIMO），
-包括 Category A（预编码在 O-DU）和 Category B（预编码在 O-RU），以及前传 IQ 压缩（BFP / 块缩放 / μ 律）。
+包括 Category A（预编码在 O-DU）、Category B（预编码在 O-RU）和 3GPP split option 8（时域 IQ），
+以及前传 IQ 压缩（BFP / 块缩放 / μ 律）。
 闭环模式用 Sionna RT 对物理场景（默认 munich）射线追踪，UE 随机撒点，按 CQI 选 MCS（含 OLLA）后下行传输。
-设计、配置与扩展方法见 [oran/README.md](oran/README.md)。
+设计、配置与扩展方法见 [oran/README.md](oran/README.md)，逐模块演示见
+[studies/oran_baseline/closed_loop_walkthrough.ipynb](studies/oran_baseline/closed_loop_walkthrough.ipynb)。
 
 ```bash
 source env.sh
-python -m unittest discover -s tests -v     # 单元测试
-python scripts/compare_cat_a_b.py           # Cat A/B 对比，结果写入 results/cat_ab/
+python -m unittest discover -s tests -v              # 单元测试
+python studies/oran_baseline/compare_cat_a_b.py      # Cat A/B 对比，结果写入 results/cat_ab/
 ```
 
 ## 注意事项
@@ -192,8 +226,8 @@ CUDA_VISIBLE_DEVICES=1 python sim_b.py &
   表现为 Sionna 的 LDPC 译码在相同输入、相同种子下结果不同，以及下标越界断言或 `illegal instruction`。
   不经过 Sionna 的纯 PyTorch 循环也能复现，同一脚本在 CPU 上完全一致；自检有时也会碰巧通过。
   在这台笔记本上请用 CPU 跑链路级仿真（`CUDA_VISIBLE_DEVICES=`），或改用 Colab / 服务器。
-  换新机器后先运行 `python cqi_compression/gpu_selfcheck.py`，详见 [cqi_compression/README.md](cqi_compression/README.md)。
-  此前在这台笔记本 GPU 上得到的链路级结果（包括重新运行的 `notebooks/closed_loop_walkthrough.ipynb`）需要复核。
+  换新机器后先运行 `python studies/dynamic_split/cqi_compression/gpu_selfcheck.py`，详见 [studies/dynamic_split/cqi_compression/README.md](studies/dynamic_split/cqi_compression/README.md)。
+  此前在这台笔记本 GPU 上得到的链路级结果（包括重新运行的 `studies/oran_baseline/closed_loop_walkthrough.ipynb`）需要复核。
 
 ## 复现环境
 
