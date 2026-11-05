@@ -144,19 +144,27 @@ class FixedPoint:
     RMS 比满量程低 ``backoff_db`` dB。缩放是静态的（不随时隙变化）；BFP 的指数会在
     每个 PRB 内自适应动态范围，所以静态缩放只需保证不溢出、不过分浪费分辨率。
 
-    :param nominal_power: 标称平均功率 E|x|^2（每个复样点）
+    :param nominal_power: 标称平均功率 E|x|^2（每个复样点）。也可以是张量，与信号按广播规则逐元素对应，
+        用于每路数据流各自设定数字增益（如 cell-free 中按各 O-RU 天线的实际功率设定，见
+        :meth:`oran.fronthaul.FronthaulLink.set_stream_power`）
     :param backoff_db: I/Q 分量 RMS 相对满量程的回退
     :param width: 定点位宽（O-RAN 不压缩时为 16）
     """
 
-    def __init__(self, nominal_power: float, backoff_db: float = 15.0, width: int = 16):
-        if nominal_power <= 0:
-            raise ValueError("nominal_power 必须为正")
+    def __init__(self, nominal_power, backoff_db: float = 15.0, width: int = 16):
         self.width = int(width)
         self.backoff_db = float(backoff_db)
-        self.nominal_power = float(nominal_power)
         full_scale = 2.0 ** (self.width - 1)
-        rms_per_component = np.sqrt(self.nominal_power / 2)
+        if isinstance(nominal_power, torch.Tensor):
+            if bool((nominal_power <= 0).any()):
+                raise ValueError("nominal_power 必须为正")
+            self.nominal_power = nominal_power
+            rms_per_component = torch.sqrt(nominal_power / 2)
+        else:
+            if nominal_power <= 0:
+                raise ValueError("nominal_power 必须为正")
+            self.nominal_power = float(nominal_power)
+            rms_per_component = np.sqrt(self.nominal_power / 2)
         self.scale = full_scale * 10 ** (-self.backoff_db / 20) / rms_per_component
 
     def quantize(self, x: torch.Tensor) -> Tuple[torch.Tensor, int]:

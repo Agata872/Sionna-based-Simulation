@@ -1,4 +1,4 @@
-"""闭环（CQI → MCS → OLLA）与射线追踪信道的测试。
+"""闭环（CQI → MCS → OLLA）与射线追踪 / UMi 撒点信道的测试。
 
 运行：python -m unittest discover -s tests -v
 射线追踪的冒烟测试需要 Sionna RT（Mitsuba GPU 变体），不可用时跳过。
@@ -246,6 +246,26 @@ class TestRTClosedLoop(unittest.TestCase):
         # 同一种子撒点可复现
         np.testing.assert_allclose(sim.drop(3), pos)
 
+
+
+class TestUMiClosedLoop(unittest.TestCase):
+    def test_drop_and_run(self):
+        from oran import ClosedLoopDownlink
+        sionna.phy.config.device = DEVICE
+        cfg = ORANConfig(channel_model="umi", num_prb=12, num_oru=2, num_oru_ant=4, num_ue=2, num_ue_ant=2,
+                         num_layers_per_ue=1, mcs_table=2, per_oru_power=True, fronthaul_agc=True, device=DEVICE)
+        sim = ClosedLoopDownlink(cfg, LinkAdaptationConfig(olla=False))
+        pos = sim.drop(3)
+        self.assertEqual(pos.shape, (2, 3))
+        res = sim.run_drop(pos, num_batches=2, batch_size=3, warmup_batches=0)
+        s = res.summary(cfg.slots_per_second)
+        self.assertEqual(s["num_blocks"], 6)
+        self.assertTrue(all(0 <= c <= 15 for c in s["cqi"]))
+        self.assertTrue(np.all(np.isfinite(s["snr_db"])))
+        # 同一种子撒点可复现（位置与信道）
+        h = sim.rt_channel.h.clone()
+        np.testing.assert_allclose(sim.drop(3), pos)
+        self.assertTrue(torch.equal(sim.rt_channel.h, h))
 
 if __name__ == "__main__":
     unittest.main()

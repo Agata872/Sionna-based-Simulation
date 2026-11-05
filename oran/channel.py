@@ -7,7 +7,9 @@ BS 阵列的方位角（bs_orientation 的 yaw），相当于把 UE 放到不同
 输出张量的轴约定与 Sionna 一致：num_rx = UE 数，num_tx = O-RU 数。
 信道按链路逐样本归一化，使每对收发天线的平均功率为 1，再乘以大尺度增益 link_gain_db。
 
-channel_model="rt" 时改用 Sionna RT 射线追踪（:mod:`oran.rt_channel`），信道含链路预算，噪声方差为 1。
+channel_model="rt" 时改用 Sionna RT 射线追踪（:mod:`oran.rt_channel`），channel_model="umi" 时改用
+TR 38.901 UMi-Street Canyon 随机信道下的 cell-free 撒点（:mod:`oran.umi_channel`）；两者的信道都含链路预算，
+噪声方差为 1，UE 静止。
 """
 
 from dataclasses import dataclass
@@ -119,6 +121,9 @@ class DownlinkChannel:
         if cfg.channel_model == "rt":
             from .rt_channel import RTChannel             # 只有用到时才加载 Mitsuba / Sionna RT
             self.model = RTChannel(cfg, self.frequencies, device=device)
+        elif cfg.channel_model == "umi":
+            from .umi_channel import UMiChannel
+            self.model = UMiChannel(cfg, self.frequencies, precision=precision, device=device)
         else:
             self.model = MultiLinkCDL(cfg, precision=precision, device=device)
         self.prg_centers = prg_center_subcarriers(cfg.num_prb, cfg.prg_num_prb)
@@ -132,15 +137,23 @@ class DownlinkChannel:
             self.apply_time = ApplyTimeChannel(air.resource_grid.num_time_samples, self.l_tot,
                                                precision=precision, device=device)
 
-    def set_ue_positions(self, positions) -> None:
-        """射线追踪信道：放置 UE（[K, 3]，单位 m）并做射线追踪。"""
-        if self.cfg.channel_model != "rt":
-            raise ValueError("只有射线追踪信道（channel_model='rt'）才有 UE 位置")
-        self.model.set_ue_positions(positions)
+    @property
+    def static(self) -> bool:
+        """静止 UE、由位置决定的信道（射线追踪或 UMi 撒点）：每个撒点一个信道实现。"""
+        return self.cfg.channel_model in ("rt", "umi")
+
+    def set_ue_positions(self, positions, **kwargs) -> None:
+        """射线追踪 / UMi 撒点信道：放置 UE（[K, 3]，单位 m）并生成该位置的信道。
+
+        UMi 时可给 seed（见 :meth:`oran.umi_channel.UMiChannel.set_ue_positions`）。
+        """
+        if not self.static:
+            raise ValueError("只有射线追踪（'rt'）或 UMi 撒点（'umi'）信道才有 UE 位置")
+        self.model.set_ue_positions(positions, **kwargs)
 
     def sample(self, batch_size: int) -> ChannelState:
         rg = self.rg
-        if self.cfg.channel_model == "rt":
+        if self.static:
             # 静止 UE：同一位置的信道在各时隙（批次样本）、各符号上相同
             return ChannelState(self.model.ofdm_channel(rg.num_ofdm_symbols, batch_size))
         if self.cfg.domain == "freq":

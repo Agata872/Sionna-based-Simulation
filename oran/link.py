@@ -161,8 +161,14 @@ class ORANDownlink:
         # 前传 + O-RU
         grids, w_applied = [], []
         n = cfg.num_oru_ant
+        if cfg.fronthaul_agc and cfg.category != "B":
+            # O-DU 按各天线的实际平均功率设定定点化增益（权值由 CSI 决定，静止 UE 时每个撒点不变）
+            p_ant = self.odu.antenna_power(tx.w).mean(dim=0)
+            p_ant = torch.clamp(p_ant, min=1e-3 * float(p_ant.mean()))
         for o in range(cfg.num_oru):
-            uplane_hat, w_hat = self.fronthaul[o].transmit(tx.uplane[o], tx.weights[o])
+            if cfg.fronthaul_agc and cfg.category != "B":
+                self.fronthaul[o].set_stream_power(p_ant[o * n:(o + 1) * n])
+            uplane_hat, w_hat = self.fronthaul[o].transmit(tx.uplane[o], tx.weights[o], tx.re_map)
             grid = self.orus[o].frequency_domain(uplane_hat, w_hat)
             if stats is not None:
                 ideal = apply_precoder(tx.x_layers, tx.w[:, :, o * n:(o + 1) * n], self.odu.prg_of_sc)
@@ -192,6 +198,26 @@ class ORANDownlink:
         self.fronthaul = self._make_fronthaul()
 
     @torch.no_grad()
+    def transmit_receive(self, batch_size: int, snr_db: float, state: Optional[ChannelState] = None,
+                         stats: Optional[LinkStats] = None):
+        """一个批次的 O-DU → 前传 → O-RU → 信道 → UE，返回 (O-DU 输出, UE 输出)。
+
+        O-DU 输出中有发送的比特与数据符号（tx.bits、tx.x_data），UE 输出中有译码比特、CRC 与均衡后的数据符号
+        （rx.x_hat，可画星座图）。run_batch 在此基础上做统计。
+        """
+        cfg = self.cfg
+        no = 10 ** (-snr_db / 10)
+        if state is None:
+            state = self.channel.sample(batch_size)
+        tx, y, w_applied = self._transmit(batch_size, no, state, stats=stats)
+        h_eff = None
+        if cfg.channel_estimation == "perfect":
+            w = torch.cat(w_applied, dim=2)                 # 各 O-RU 实际使用的权值
+            h_eff = effective_channel(state.stacked(), w, self.odu.prg_of_sc)
+            h_eff = h_eff.unflatten(3, (cfg.num_ue, cfg.num_layers_per_ue))
+        return tx, self.ue(y, no, h_eff)
+
+    @torch.no_grad()
     def run_batch(self, batch_size: int, snr_db: float, stats: Optional[LinkStats] = None,
                   state: Optional[ChannelState] = None) -> LinkStats:
         """仿真一个批次（batch_size 个时隙）。
@@ -200,19 +226,7 @@ class ORANDownlink:
         """
         cfg = self.cfg
         stats = stats or LinkStats(cfg.num_ue)
-        no = 10 ** (-snr_db / 10)
-
-        if state is None:
-            state = self.channel.sample(batch_size)
-        tx, y, w_applied = self._transmit(batch_size, no, state, stats=stats)
-
-        h_eff = None
-        if cfg.channel_estimation == "perfect":
-            w = torch.cat(w_applied, dim=2)                 # 各 O-RU 实际使用的权值
-            h_eff = effective_channel(state.stacked(), w, self.odu.prg_of_sc)
-            h_eff = h_eff.unflatten(3, (cfg.num_ue, cfg.num_layers_per_ue))
-
-        rx = self.ue(y, no, h_eff)
+        tx, rx = self.transmit_receive(batch_size, snr_db, state, stats)
 
         for k in range(cfg.num_ue):
             b, b_hat = tx.bits[k], rx.bits[k]
@@ -270,4 +284,7 @@ class ORANDownlink:
         return results
 
     def fronthaul_rate(self, num_prb: Optional[int] = None):
-        return fronthaul_rate(self.cfg, num_prb)
+        """单个 O-RU 链路的前传比特率；Cat B 调制压缩时按当前各 UE 的 MCS（set_mcs）计算。"""
+        from .bler_model import mcs_entry
+        qm = [mcs_entry(self.cfg.mcs_table, int(m))[0] for m in self.mcs]
+        return fronthaul_rate(self.cfg, num_prb, qm_per_ue=qm)

@@ -23,8 +23,8 @@
 Sionna-based Simulation/
 ├── 3GPP and ORAN report/   # 3GPP / O-RAN 标准与规范 PDF（不纳入 git）
 ├── Paper reference/        # 参考论文 PDF（不纳入 git）
-├── oran/                   # 公共仿真库：O-RAN 7.2x 下行 Cat A / Cat B / split 8 链路级仿真、RT 闭环（说明见 oran/README.md）
-│   └── compression/        #   前传 IQ 压缩算法（BFP、块缩放、μ 律）
+├── oran/                   # 公共仿真库：O-RAN 7.2x 下行 Cat A / Cat B、3GPP split 7-1 / 8 链路级仿真、RT 与 UMi 撒点闭环（说明见 oran/README.md）
+│   └── compression/        #   前传 IQ 压缩算法（BFP、块缩放、μ 律、调制压缩）
 ├── common/                 # 各方向共用的工具函数
 │   └── runio.py            #   运行目录记录：Run（自动写 metadata 与源码快照）、Recorder、read_rows
 ├── tests/                  # oran/ 的单元测试：python -m unittest discover -s tests -v
@@ -54,7 +54,7 @@ Sionna-based Simulation/
 
 | 方向 | 时间 | 内容 | 状态 |
 |---|---|---|---|
-| [oran_baseline](studies/oran_baseline/README.md) | 2026-10-04 ~ 05 | `oran/` 仿真器的基线验证：Cat A/B × 压缩位宽 × SNR；射线追踪闭环中 CSI-RS / CQI / OLLA 能看到多少压缩失真 | 完成 |
+| [oran_baseline](studies/oran_baseline/README.md) | 2026-10-04 ~ 05；2026-11-05 | `oran/` 仿真器的基线验证：Cat A/B × 压缩位宽 × SNR；射线追踪闭环中 CSI-RS / CQI / OLLA 能看到多少压缩失真；cell-free UMi 撒点中 7-1 / Cat A / Cat B / option 8 的前传负载（F1） | 完成；F1 见 experiments.md |
 | [csirs_du_ru](studies/csirs_du_ru/README.md) | 2026-10-06 | 调研与第 1–3 轮：研究现状；CSI-RS 压缩与 DU–RU 预编码协作（权值表示、信息时效、协作消息预算、RU 自主预编码后的 MCS 决策） | 结束，问题转入第 4 轮 |
 | [srsbf](studies/srsbf/README.md) | 2026-10-07 | 第 4 轮：O-RU 侧 SRS 波束赋形下 O-DU 的多用户调度与链路自适应 | 方向已修正（把 O-RAN 接口本身当成了研究对象），由第 5 轮取代 |
 | [twin_ci_compression](studies/twin_ci_compression/README.md) | 2026-10-07 ~ 11 | 第 5–8 轮与第一篇论文：数字孪生（信道知识图）辅助的 cell-free 前传信道信息压缩（URTS-CODE）；第 8 轮是 CSI-RS 压缩调研和第二篇方案 | 第一篇有初稿；第二篇暂停 |

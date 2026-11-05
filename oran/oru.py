@@ -9,6 +9,8 @@
 前传只承载 PRB（12·num_prb 个子载波）。IFFT 点数按 NR 惯例取不小于 num_sc/0.85 的最小 2 的幂，
 例如 30 kHz 下 51 PRB（20 MHz）为 1024 点、30.72 Msps，273 PRB（100 MHz）为 4096 点。
 
+option 7-1 的 O-RU 与 Cat A 相同（只做 IFFT + CP），前传送来的是整个载波的频域 IQ。
+
 option 8 的 O-RU 只有 DAC 和射频。前传送来的是时域 IQ，FronthaulLink 把它换算成 PRB 上的频域等效网格
 （见 :class:`oran.fronthaul.TimeDomainCodec`），这里与 Cat A 一样直通。
 """

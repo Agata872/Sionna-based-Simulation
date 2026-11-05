@@ -9,9 +9,9 @@ from fractions import Fraction
 
 import torch
 
-from oran.compression import (BFPCompressor, BlockScalingCompressor, FixedPoint, MuLawCompressor,
-                              available_compressors, from_blocks, make_compressor, pack, to_blocks,
-                              unpack)
+from oran.compression import (BFPCompressor, BlockScalingCompressor, FixedPoint, ModulationCompressor,
+                              MuLawCompressor, available_compressors, decode_scaler, encode_scaler,
+                              from_blocks, make_compressor, pack, qam_unit, to_blocks, unpack)
 
 
 def _ints(values):
@@ -253,6 +253,115 @@ class TestBlockScalingAndMuLaw(TestBFP):
     test_lossless_at_16_bit = None
     test_bfp_beats_fixed_shift = None
 
+
+
+def ref_mod_decompress(sample, w, csf, scaler):
+    """附录 A.5 解压伪代码的逐行翻译（单个 I 或 Q 分量）。
+
+    1) 读 udIqWidth 位的 iqSample；2) 按 Q1.(udIqWidth−1) 映射到 [−1, 1)；
+    3b) csf == 1 时 iqSampleFx += 2^−udIqWidth；3c) iqSampleScaled = scaler × iqSampleFx × √2。
+    """
+    u = sample & ((1 << w) - 1)                         # udIqWidth 位二进制补码
+    v = u - (1 << w) if u >= (1 << (w - 1)) else u
+    fx = Fraction(v, 1 << (w - 1))
+    if csf:
+        fx += Fraction(1, 1 << w)
+    return float(scaler) * float(fx) * math.sqrt(2)
+
+
+class TestModulationCompression(unittest.TestCase):
+    FS = 3.976                                          # 满量程（与 16 bit 定点、回退 15 dB 时相同的量级）
+
+    def _qam(self, qm, n=4000, seed=0):
+        g = torch.Generator().manual_seed(seed)
+        w = qm // 2
+        a = 2 * torch.randint(-(1 << (w - 1)), 1 << (w - 1), (2, n), generator=g) + 1
+        u = qam_unit(qm)
+        return torch.complex(a[0].double() * u, a[1].double() * u), a
+
+    def test_qam_unit_matches_sionna(self):
+        from sionna.phy.mapping import Constellation
+        for qm in (2, 4, 6, 8, 10):
+            pts = Constellation("qam", qm).points.cpu().to(torch.complex128)
+            a = pts / qam_unit(qm)
+            # 星座点为 u·(a + jb)，a、b 为奇数
+            self.assertTrue(torch.allclose(a.real, torch.round((a.real - 1) / 2) * 2 + 1, atol=1e-4), qm)
+            self.assertEqual(float(a.real.abs().max().round()), 2 ** (qm // 2) - 1)
+
+    def test_scaler_field(self):
+        # §7.7.4.3：value = mantissa × 2^-exponent，mantissa = 低 11 bit / 2^11，exponent = 高 4 bit
+        self.assertEqual(int(encode_scaler(torch.tensor(0.5))), 1024)
+        self.assertEqual(int(encode_scaler(torch.tensor(0.25))), (1 << 11) | 1024)
+        self.assertEqual(int(encode_scaler(torch.tensor(0.0))), 0)
+        v = torch.tensor([1 - 2 ** -11, 0.3, 0.1, 1e-3, 2 ** -15])
+        rec = decode_scaler(encode_scaler(v))
+        self.assertTrue(bool(((rec - v.double()).abs() / v.double() <= 2 ** -11).all()))
+        for field in (0, 1, 2047, 1 << 11, (15 << 11) | 1500, 12345):
+            bits = [(field >> k) & 1 for k in range(15)]
+            mantissa = sum(bits[k] * 2.0 ** (k - 11) for k in range(11))
+            exponent = sum(bits[k] * 2 ** (k - 11) for k in range(11, 15))
+            self.assertAlmostEqual(float(decode_scaler(torch.tensor(field))), mantissa * 2.0 ** -exponent)
+        with self.assertRaises(ValueError):
+            encode_scaler(torch.tensor(1.0))
+
+    def test_lossless_for_every_qam(self):
+        for qm in (2, 4, 6, 8, 10):
+            w = qm // 2
+            x, _ = self._qam(qm)
+            width = torch.full(x.shape, w)
+            unit = torch.full(x.shape, qam_unit(qm), dtype=torch.float64)
+            sec = torch.tensor(w)
+            i, q, csf, clipped = ModulationCompressor.compress(x, unit, width, sec)
+            self.assertEqual(clipped, 0)
+            self.assertTrue(bool(csf.all()))
+            lim = 1 << (w - 1)
+            self.assertTrue(bool(((i >= -lim) & (i < lim) & (q >= -lim) & (q < lim)).all()))
+            scaler = decode_scaler(encode_scaler(ModulationCompressor.scaler(unit, width, self.FS)))
+            y = self.FS * ModulationCompressor.decompress(i, q, csf, scaler, sec, width > 0)
+            err = float(((y - x).abs() / x.abs()).max())
+            self.assertLess(err, 2 ** -11, qm)                  # 只剩 15 bit scaler 的量化误差
+            self.assertEqual(ModulationCompressor.bits_per_prb(w), 12 * qm)
+
+    def test_mixed_widths_not_shifted(self):
+        # 图 A.5-3：16QAM 与 64QAM 同段（udIqWidth 3），只有 64QAM 平移；QPSK（如 DMRS、CSI-RS）放进 256QAM 段同理
+        for qm_low, qm_high in ((4, 6), (2, 8), (2, 4)):
+            w_sec = qm_high // 2
+            x, a = self._qam(qm_low, n=200)
+            width = torch.full(x.shape, qm_low // 2)
+            unit = torch.full(x.shape, qam_unit(qm_low), dtype=torch.float64)
+            i, q, csf, _ = ModulationCompressor.compress(x, unit, width, torch.tensor(w_sec))
+            self.assertFalse(bool(csf.any()))
+            # 不平移：分数表示 a / 2^{w_c} 直接落在 Q1.(W−1) 网格上
+            self.assertTrue(torch.equal(i.long(), a[0] * 2 ** (w_sec - 1 - qm_low // 2)))
+            scaler = decode_scaler(encode_scaler(ModulationCompressor.scaler(unit, width, self.FS)))
+            y = self.FS * ModulationCompressor.decompress(i, q, csf, scaler, torch.tensor(w_sec), width > 0)
+            self.assertLess(float(((y - x).abs() / x.abs()).max()), 2 ** -11)
+
+    def test_decompress_matches_spec_pseudocode(self):
+        g = torch.Generator().manual_seed(3)
+        for w in (1, 2, 3, 4, 5):
+            n = 300
+            i = torch.randint(-(1 << (w - 1)), 1 << (w - 1), (n,), generator=g, dtype=torch.int32)
+            q = torch.randint(-(1 << (w - 1)), 1 << (w - 1), (n,), generator=g, dtype=torch.int32)
+            csf = torch.rand(n, generator=g) < 0.5
+            field = torch.randint(0, 1 << 15, (n,), generator=g)
+            scaler = decode_scaler(field)
+            y = ModulationCompressor.decompress(i, q, csf, scaler, torch.tensor(w), torch.ones(n, dtype=torch.bool))
+            for k in range(n):
+                self.assertAlmostEqual(float(y[k].real),
+                                       ref_mod_decompress(int(i[k]), w, bool(csf[k]), scaler[k]), places=12)
+                self.assertAlmostEqual(float(y[k].imag),
+                                       ref_mod_decompress(int(q[k]), w, bool(csf[k]), scaler[k]), places=12)
+
+    def test_unpopulated_res_are_zero(self):
+        x = torch.tensor([0j, (1 + 1j) / math.sqrt(2)], dtype=torch.complex128)
+        width = torch.tensor([0, 1])
+        unit = torch.tensor([0.0, 1 / math.sqrt(2)], dtype=torch.float64)
+        i, q, csf, _ = ModulationCompressor.compress(x, unit, width, torch.tensor(1))
+        scaler = decode_scaler(encode_scaler(ModulationCompressor.scaler(unit, width, self.FS)))
+        y = ModulationCompressor.decompress(i, q, csf, scaler, torch.tensor(1), width > 0)
+        self.assertEqual(complex(y[0]), 0j)
+        self.assertAlmostEqual(abs(complex(y[1]) * self.FS - complex(x[1])), 0.0, places=3)
 
 if __name__ == "__main__":
     unittest.main()

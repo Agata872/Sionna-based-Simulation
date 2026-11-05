@@ -12,7 +12,8 @@ import torch
 
 from oran import CompressionConfig, ORANConfig, ORANDownlink
 from oran.channel_estimation import PRGLinearInterpolator
-from oran.fronthaul import fronthaul_rate, gaussian_loading_db
+from oran.bler_model import mcs_entry
+from oran.fronthaul import fronthaul_rate, gaussian_loading_db, tr38816_rate
 from oran.precoding import compute_precoder
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -143,6 +144,152 @@ class TestLink(unittest.TestCase):
         self.assertAlmostEqual(rate.uplane_payload * 1.25 / 1e9, 157.3, delta=0.05)
         self.assertEqual(rate.cplane_total, 0.0)
         self.assertLess(rate.uplane_total / rate.uplane_payload, 1.05)
+
+
+class TestSplitsAndCellFree(unittest.TestCase):
+    """option 7-1、调制压缩、cell-free（多 O-RU）、按 O-RU 的功率约束与数字增益、UMi 撒点信道。"""
+
+    @classmethod
+    def setUpClass(cls):
+        sionna.phy.config.device = DEVICE
+
+    def _all_oru_signals(self, cfg, seed=7, batch_size=2):
+        sionna.phy.config.seed = seed
+        sim = ORANDownlink(cfg)
+        sionna.phy.config.seed = seed
+        state = sim.channel.sample(batch_size)
+        tx = sim.odu(batch_size, sim.channel.csi(state, sim.csi_symbol))
+        out = []
+        for o in range(cfg.num_oru):
+            uplane, w = sim.fronthaul[o].transmit(tx.uplane[o], tx.weights[o], tx.re_map)
+            out.append(sim.orus[o].frequency_domain(uplane, w))
+        return torch.stack(out, 1), sim, tx
+
+    def test_split71_equals_cat_a_without_compression(self):
+        xa, _, _ = self._all_oru_signals(small_config(category="A", uplane=IDEAL))
+        x71, _, _ = self._all_oru_signals(small_config(category="7-1", uplane=IDEAL))
+        self.assertTrue(torch.equal(xa, x71))
+
+    def test_cell_free_splits_identical_without_compression(self):
+        kw = dict(num_oru=2, num_oru_ant=4, num_ue=2, num_ue_ant=2, num_layers_per_ue=1)
+        ref, _, _ = self._all_oru_signals(small_config(category="A", uplane=IDEAL, **kw))
+        for cat in ("B", "7-1", "8"):
+            x, _, _ = self._all_oru_signals(small_config(category=cat, uplane=IDEAL, bfw=IDEAL, **kw))
+            self.assertLess(float((x - ref).abs().max()), 1e-5, cat)
+
+    def test_split71_fixed_point_sqnr(self):
+        # 频域均匀定点：SQNR 接近高斯分量的最优均匀量化（各天线功率不同，按全链路平均功率定点时略低）
+        sionna.phy.config.seed = 7
+        sim = ORANDownlink(small_config(category="7-1", uplane=CompressionConfig("fixed", 8)))
+        state = sim.channel.sample(4)
+        tx = sim.odu(4, sim.channel.csi(state, sim.csi_symbol))
+        codec = sim.fronthaul[0].uplane
+        codec(tx.uplane[0])
+        k = 10 ** (gaussian_loading_db(8) / 20)
+        tail = (1 + k * k) * 0.5 * math.erfc(k / math.sqrt(2)) - k * math.exp(-k * k / 2) / math.sqrt(2 * math.pi)
+        sqnr = -10 * np.log10((k / 128) ** 2 / 12 + 2 * tail)
+        self.assertLess(codec.stats.sqnr_db, sqnr + 0.5)
+        self.assertGreater(codec.stats.sqnr_db, sqnr - 3.0)
+        self.assertEqual(codec.bits_per_block, 2 * 8 * 12)
+
+    def test_modulation_compression_is_lossless(self):
+        from oran.csi_rs import CSIRS
+        for mcs in (5, 15, 27):                         # MCS 表 2：QPSK、64QAM、256QAM
+            cfg = small_config(category="B", mcs_table=2, mcs_index=mcs, uplane=CompressionConfig("modulation", 16),
+                               bfw=IDEAL)
+            x, sim, tx = self._all_oru_signals(cfg)
+            ideal, _, _ = self._all_oru_signals(small_config(category="B", mcs_table=2, mcs_index=mcs,
+                                                             uplane=IDEAL, bfw=IDEAL))
+            self.assertLess(float((x - ideal).abs().max() / ideal.abs().max()), 1e-3, mcs)
+            st = sim.fronthaul[0].uplane.stats
+            self.assertGreater(st.sqnr_db, 60.0)
+            self.assertEqual(st.num_clipped, 0)
+            # 比特数：数据符号每 PRB 24·Qm/2 bit，DMRS 符号 24 bit
+            qm = mcs_entry(2, mcs)[0]
+            n_dmrs = len(sim.pdsch_configs[0].dmrs_symbol_indices)
+            per_slot = cfg.num_layers * cfg.num_prb * (24 * (qm // 2) * (14 - n_dmrs) + 24 * n_dmrs)
+            self.assertEqual(st.num_bits, 2 * per_slot)
+            rate = sim.fronthaul_rate()
+            self.assertAlmostEqual(rate.uplane_payload, per_slot * cfg.slots_per_second, places=3)
+        # 测量时隙：CSI-RS 与数据同段，CSI-IM 不承载，仍然无损
+        csirs = CSIRS(cfg, sim.pdsch_configs[0], device=DEVICE)
+        state = sim.channel.sample(1)
+        tx = sim.odu(1, sim.channel.csi(state, sim.csi_symbol), csi_rs=csirs)
+        x_hat, _ = sim.fronthaul[0].transmit(tx.uplane[0], tx.weights[0], tx.re_map)
+        self.assertLess(float((x_hat - tx.x_layers).abs().max()), 1e-3)
+
+    def test_modulation_only_for_cat_b(self):
+        for cat in ("A", "7-1", "8"):
+            with self.assertRaises(ValueError):
+                ORANConfig(category=cat, uplane=CompressionConfig("modulation", 16)).validate()
+
+    def test_split71_rate_and_tr38816(self):
+        cfg = ORANConfig(category="7-1", num_ue=1, num_oru_ant=32, uplane=CompressionConfig("fixed", 16))
+        rate = fronthaul_rate(cfg, num_prb=273)
+        self.assertAlmostEqual(rate.uplane_payload, 32 * 3276 * 28000 * 32, places=0)
+        self.assertEqual(rate.cplane_total, 0.0)
+        self.assertLess(rate.uplane_total / rate.uplane_payload, 1.05)
+        # TR 38.816 表 A-2，参数集 #1（100 MHz，32 天线 / 8 层，2×16 bit）
+        self.assertAlmostEqual(tr38816_rate("7-1", 32, 100) / 1e9, 113.6, delta=0.15)
+        self.assertAlmostEqual(tr38816_rate("7-2", 8, 100) / 1e9, 29.3, delta=0.05)
+        self.assertAlmostEqual(tr38816_rate("7-1", 8, 100) / 1e9, 28.4, delta=0.05)
+        # 7-1 不论调度传整个载波：与 Cat A 不压缩（16 bit）满负荷时的净荷相同
+        cat_a = fronthaul_rate(ORANConfig(category="A", num_ue=1, num_oru_ant=32,
+                                          uplane=CompressionConfig("none", 16)), num_prb=273)
+        self.assertAlmostEqual(cat_a.uplane_payload, rate.uplane_payload, places=0)
+
+    def test_per_oru_power_constraint(self):
+        cfg = small_config(num_oru=2, num_oru_ant=4, num_ue=2, num_ue_ant=2, num_layers_per_ue=1,
+                           link_gain_db=[[0.0, -15.0], [-3.0, -20.0]], per_oru_power=True)
+        sionna.phy.config.seed = 2
+        sim = ORANDownlink(cfg)
+        state = sim.channel.sample(3)
+        h = sim.channel.csi(state, sim.csi_symbol)
+        w = sim.odu.precoder(h)
+        p = sim.odu.oru_power(w)
+        self.assertTrue(torch.allclose(p.amax(-1), torch.full((3,), 0.5, device=p.device), atol=1e-5))
+        # 整体缩放不改变 BD 的零陷
+        leak = (h[:, :, 1] @ w[..., :1]).abs().max() + (h[:, :, 0] @ w[..., 1:]).abs().max()
+        self.assertLess(float(leak), 1e-4)
+
+    def test_fronthaul_agc_helps_uniform_quantizer(self):
+        # 两个 O-RU 增益相差 25 dB：弱 O-RU 的天线功率远低于标称 1/N_t，按标称功率定点时均匀量化浪费分辨率
+        kw = dict(category="8", num_oru=2, num_oru_ant=4, num_ue=1, num_ue_ant=2, num_layers_per_ue=1,
+                  link_gain_db=[[0.0, -25.0]], uplane=CompressionConfig("fixed", 8))
+        sqnr = {}
+        for agc in (False, True):
+            sionna.phy.config.seed = 4
+            sim = ORANDownlink(small_config(fronthaul_agc=agc, **kw))
+            sim.run_batch(2, 30.0)
+            sqnr[agc] = [fh.uplane.stats.sqnr_db for fh in sim.fronthaul]
+        self.assertGreater(min(sqnr[True]), min(sqnr[False]) + 3.0)
+        self.assertGreater(min(sqnr[True]), 38.0)
+
+    def test_umi_drop(self):
+        cfg = ORANConfig(channel_model="umi", num_prb=12, num_oru=4, num_oru_ant=4, num_ue=2, num_ue_ant=2,
+                         num_layers_per_ue=1, per_oru_power=True, device=DEVICE)
+        sim = ORANDownlink(cfg)
+        ch = sim.channel.model
+        np.testing.assert_allclose(ch.oru_positions[:, :2], [[100, 100], [300, 100], [100, 300], [300, 300]])
+        pos = ch.drop_ues(2, 5)
+        d2d = np.linalg.norm(pos[:, None, :2] - ch.oru_positions[None, :, :2], axis=-1)
+        self.assertTrue(np.all(d2d >= cfg.umi.min_dist_2d))
+        sim.channel.set_ue_positions(pos, seed=5)
+        h1 = ch.h.clone()
+        state = sim.channel.sample(3)
+        self.assertEqual(tuple(state.h_freq.shape), (3, 2, 2, 4, 4, 14, 144))
+        self.assertTrue(torch.equal(state.h_freq[0], state.h_freq[2]))       # 静止 UE
+        # 每个 UE 以最早到达的路径为时延零点；绝对到达时间下最远 O-RU 的首径晚到 (d_max − d_min) / c 左右
+        self.assertTrue(np.allclose(ch.delay_offset.min(axis=1), 0.0))
+        gain = ch.link_gain_db()
+        self.assertTrue(np.all((gain < -50) & (gain > -160)))
+        # 同一 seed 得到同一信道；不给 seed、位置不变时沿用已有信道
+        sim.channel.set_ue_positions(pos)
+        self.assertTrue(torch.equal(ch.h, h1))
+        sim.channel.set_ue_positions(pos, seed=5)
+        self.assertTrue(torch.allclose(ch.h, h1))
+        stats = sim.run_batch(3, 0.0, state=state)
+        self.assertTrue(np.all(np.isfinite(stats.evm_percent)))
 
 
 if __name__ == "__main__":

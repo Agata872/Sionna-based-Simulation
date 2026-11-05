@@ -13,10 +13,12 @@
     "bfp"            块浮点（udCompMeth 1，附录 A.1）
     "block_scaling"  块缩放（udCompMeth 2，附录 A.2）
     "mu_law"         μ 律（udCompMeth 3，附录 A.3），iq_width 取 3~15
+    "modulation"     调制压缩（udCompMeth 4，附录 A.5），只用于 Cat B 的 U-plane。它按 RE 的星座类型编码，
+                     不是按块压缩，所以不在下面的注册表里；见 modulation.py 和 oran.fronthaul.ModulationCodec
 
 扩展新算法：在本目录新建文件，继承 :class:`IQCompressor`，设置 ``method`` 和
 ``param_bits``，实现 compress/decompress，再用 :func:`register_compressor` 注册。
-O-RAN 中其他方法（尚未实现）：modulation(4)、bfp_selective_re(5)、modulation_selective_re(6)、
+O-RAN 中其他方法（尚未实现）：bfp_selective_re(5)、modulation_selective_re(6)、
 bfp_selective_re_hdr(7)、modulation_selective_re_hdr(8)。
 """
 
@@ -26,6 +28,8 @@ from .base import (COMP_METH_CODES, CompressedIQ, FixedPoint, IQCompressor,
                    block_bits, from_blocks, pack, round_half_away, to_blocks, unpack)
 from .bfp import BFPCompressor
 from .block_scaling import BlockScalingCompressor
+from .modulation import (ModulationCompressor, decode_scaler, encode_scaler, qam_unit,
+                         qam_width)
 from .mu_law import MuLawCompressor
 from .none import IdealIQ, NoCompression
 
@@ -57,6 +61,7 @@ for _cls in (IdealIQ, NoCompression, BFPCompressor, BlockScalingCompressor, MuLa
 __all__ = [
     "COMP_METH_CODES", "CompressedIQ", "FixedPoint", "IQCompressor",
     "BFPCompressor", "BlockScalingCompressor", "MuLawCompressor", "NoCompression", "IdealIQ",
+    "ModulationCompressor", "encode_scaler", "decode_scaler", "qam_unit", "qam_width",
     "block_bits", "to_blocks", "from_blocks", "pack", "unpack", "round_half_away",
     "register_compressor", "available_compressors", "make_compressor",
 ]

@@ -4,7 +4,8 @@
     TB CRC -> 码块分割 + CB CRC -> LDPC 编码 -> 速率匹配 -> 加扰（PDSCH）    [TBEncoder]
     -> 调制 -> 层映射 -> RE 映射（数据 + DMRS；测量时隙另放 CSI-RS / CSI-IM，见 csi_rs.py）
     -> Cat A：预编码 -> 前传发送 N_TRX 路天线端口流
-       Cat B：前传发送 L 路层流 + C-plane 预编码权值
+       Cat B：前传发送 L 路层流 + C-plane 预编码权值（调制压缩时另给出逐 RE 的星座信息 re_map）
+       option 7-1：与 Cat A 相同（前传传整个载波的频域 IQ，区别只在前传，见 oran.fronthaul）
        option 8：预编码 -> IFFT + CP -> 前传发送 N_TRX 路时域 IQ（IFFT + CP 放在
                  :class:`oran.fronthaul.TimeDomainCodec` 里做，这里输出与 Cat A 相同的天线端口网格）
 
@@ -20,7 +21,9 @@ from sionna.phy.mapping import BinarySource, Mapper
 from sionna.phy.nr import LayerMapper, TBEncoder
 from sionna.phy.ofdm import ResourceGridMapper
 
+from .compression import qam_unit, qam_width
 from .config import ORANConfig
+from .fronthaul import REMap
 from .pdsch import PDSCHConfig
 from .precoding import apply_precoder, compute_precoder, subcarrier_to_prg
 
@@ -37,6 +40,7 @@ class ODUOutput:
     w: torch.Tensor                   # 预编码矩阵 [batch, num_prg, N_t, L]
     uplane: List[torch.Tensor]        # 每个 O-RU 的 U-plane eAxC 流 [batch, num_eaxc, num_symbols, num_sc]
     weights: List[Optional[torch.Tensor]]  # Cat B：每个 O-RU 的 C-plane 权值 [batch, num_prg, N_TRX, L]
+    re_map: Optional[REMap] = None    # Cat B 调制压缩：各层逐 RE 的星座位宽与幅度单位
 
 
 class ODU:
@@ -58,6 +62,10 @@ class ODU:
         self.set_pdsch_configs(pdsch_configs)
         self.rg_mapper = ResourceGridMapper(resource_grid, precision=precision, device=device)
         self.prg_of_sc = subcarrier_to_prg(cfg.num_prb, cfg.prg_num_prb)
+        # 各 PRG 的子载波占比（最后一个 PRG 可能不满），用于按带宽平均功率
+        counts = torch.bincount(self.prg_of_sc).double()
+        self.prg_weight = (counts / counts.sum()).to(device)
+        self._pilot_layers = None       # 只含 DMRS 的层网格 [L, num_symbols, num_sc]（调制压缩用，首次用到时生成）
 
     def _build_codeword(self, pc: PDSCHConfig):
         n_id = pc.carrier.n_cell_id if pc.tb.n_id is None else pc.tb.n_id
@@ -108,9 +116,58 @@ class ODU:
         return bits, x_data, x_layers
 
     def precoder(self, h_csi: torch.Tensor) -> torch.Tensor:
-        """h_csi: [batch, num_prg, K, N_r, N_t] -> W: [batch, num_prg, N_t, L]"""
-        return compute_precoder(h_csi, self.cfg.num_layers_per_ue, self.cfg.precoder,
-                                self.cfg.rzf_alpha)
+        """h_csi: [batch, num_prg, K, N_r, N_t] -> W: [batch, num_prg, N_t, L]
+
+        cfg.per_oru_power 时再整体缩放，使每个 O-RU 的平均发射功率不超过总功率的 1/num_oru：
+        c = sqrt((1/num_oru) / max_o P_o)，P_o 为 O-RU o 的天线上 ||W||² 在带宽上的平均（层符号功率为 1）。
+        缩放对所有层、所有 PRG 相同，不改变 BD / ZF 的零陷，只降低总功率（c ≤ 1）。
+        """
+        w = compute_precoder(h_csi, self.cfg.num_layers_per_ue, self.cfg.precoder, self.cfg.rzf_alpha)
+        if self.cfg.per_oru_power and self.cfg.num_oru > 1:
+            p_oru = self.oru_power(w)                                       # [batch, num_oru]
+            c = torch.sqrt((1.0 / self.cfg.num_oru) / p_oru.amax(dim=-1))
+            w = w * c[:, None, None, None].to(w.dtype)
+        return w
+
+    def antenna_power(self, w: torch.Tensor) -> torch.Tensor:
+        """各发射天线的平均功率（每 RE，按 PRG 带宽加权平均）：[batch, N_t]。"""
+        p = (w.abs() ** 2).sum(dim=-1)                                      # [batch, num_prg, N_t]
+        return torch.einsum("bpa,p->ba", p.double(), self.prg_weight.to(p.device)).to(p.dtype)
+
+    def oru_power(self, w: torch.Tensor) -> torch.Tensor:
+        """各 O-RU 的平均发射功率：[batch, num_oru]（每 RE 总功率为 1 时之和不超过 1）。"""
+        return self.antenna_power(w).unflatten(-1, (self.cfg.num_oru, self.cfg.num_oru_ant)).sum(dim=-1)
+
+    def re_map(self, csi_rs=None) -> REMap:
+        """调制压缩所需的逐 RE 星座信息（O-DU 由资源分配和 MCS 得知）：
+
+        - PDSCH 数据 RE：该 UE 的 QAM（位宽 Qm/2，幅度单位 sqrt(3 / (2(M−1)))，TS 38.211 §5.1）；
+        - DMRS RE：QPSK（位宽 1），幅度单位为导频实部的绝对值（含 DMRS 功率提升）；另一 CDM 组的位置为 0，不承载；
+        - 测量时隙（csi_rs 给定）：CSI-RS / CSI-IM 所在 RE 改为 CSI-RS 的 QPSK（位宽 1）或不承载（CSI-IM、
+          配对 UE 的 CMR 位置）。
+        """
+        rg = self.resource_grid
+        cfg = self.cfg
+        if self._pilot_layers is None:
+            zeros = torch.zeros(1, cfg.num_ue, cfg.num_layers_per_ue, rg.num_data_symbols,
+                                dtype=torch.complex64, device=self.device)
+            self._pilot_layers = self.rg_mapper(zeros).to(torch.complex64)[0].flatten(0, 1)
+        pilot = self._pilot_layers
+        is_pilot = rg.pilot_pattern.mask.flatten(0, 1).to(pilot.device).bool()        # [L, S, F]
+        qm = torch.tensor([int(_scalar(m.constellation.num_bits_per_symbol))
+                           for m in self.mappers for _ in range(cfg.num_layers_per_ue)], device=pilot.device)
+        data_width = torch.tensor([qam_width(int(q)) for q in qm], device=pilot.device)[:, None, None]
+        data_unit = torch.tensor([qam_unit(int(q)) for q in qm], device=pilot.device)[:, None, None]
+        nonzero = pilot.abs() > 0
+        width = torch.where(is_pilot, nonzero.long(), data_width.expand_as(pilot.real).long())
+        unit = torch.where(is_pilot, pilot.real.abs(), data_unit.expand_as(pilot.real).float())
+        if csi_rs is not None:
+            sym = csi_rs.symbol
+            mask = csi_rs._mask.to(pilot.device)                                     # [F]
+            csi = csi_rs._layers.to(pilot.device)                                    # [L, F]
+            width[:, sym] = torch.where(mask, (csi.abs() > 0).long(), width[:, sym])
+            unit[:, sym] = torch.where(mask, csi.real.abs().float(), unit[:, sym])
+        return REMap(width, unit)
 
     def __call__(self, batch_size: int, h_csi: torch.Tensor, csi_rs=None) -> ODUOutput:
         """
@@ -125,10 +182,11 @@ class ODU:
         uplane, weights = [], []
         for o in range(self.cfg.num_oru):
             w_o = w[:, :, o * n:(o + 1) * n, :]             # 该 O-RU 天线对应的权值行
-            if self.cfg.category in ("A", "8"):
+            if self.cfg.category in ("A", "7-1", "8"):
                 uplane.append(apply_precoder(x_layers, w_o, self.prg_of_sc))
                 weights.append(None)
             else:
                 uplane.append(x_layers)
                 weights.append(w_o)
-        return ODUOutput(bits, x_data, x_layers, w, uplane, weights)
+        re_map = self.re_map(csi_rs) if self.cfg.uplane.method == "modulation" else None
+        return ODUOutput(bits, x_data, x_layers, w, uplane, weights, re_map)

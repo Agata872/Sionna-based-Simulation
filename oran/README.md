@@ -1,8 +1,9 @@
-# O-RAN 7.2x 下行链路级仿真（Category A / B）
+# O-RAN 7.2x 下行链路级仿真（Category A / B，以及 3GPP option 7-1 / 8）
 
 基于 Sionna PHY（PyTorch 版 2.2.0）实现 O-RAN 7.2x 功能划分下的 PDSCH 下行链路，比较
-Category A（预编码在 O-DU）与 Category B（预编码在 O-RU）在前传 IQ 压缩下的性能与前传带宽。
-另有闭环模式：用 Sionna RT 对物理环境做射线追踪，UE 随机撒点，按 CQI 选 MCS 后进行下行传输。
+Category A（预编码在 O-DU）与 Category B（预编码在 O-RU）在前传 IQ 压缩下的性能与前传带宽；
+同一条链路也可切换为 3GPP option 7-1（前传传整个载波的频域 IQ）和 option 8（前传传时域 IQ）。
+另有闭环模式：UE 随机撒点（Sionna RT 射线追踪，或 TR 38.901 UMi 随机信道下的 cell-free 撒点），按 CQI 选 MCS 后进行下行传输。
 
 规范版本以 `3GPP and ORAN report/` 中的文档为准：TS 38.211 V18.6.0、TS 38.212 V18.5.0、
 TS 38.214 V18.2.0（Rel-18），O-RAN WG4 CUS v22.00（O-RAN.WG4.TS.CUS.0-R005-v22.00）。
@@ -42,19 +43,32 @@ UE
 | 压缩噪声注入位置 | 天线端口上，空间白色，不经预编码 | 层上，随信号一起被预编码（也随 BD 一起对其他 UE 置零） |
 | C-plane | 只有段描述 | 另带 N_TRX × L 预编码权值（可压缩） |
 
+3GPP option 7-1（`category="7-1"`，TR 38.801 §11.1.2.7、TR 38.816 §4.2）：O-DU 做到预编码和 RE 映射，O-RU 只做 IFFT + CP，
+前传承载 N_TRX 路**整个载波**（全部子载波、每个符号，与调度无关）的频域 IQ。与 Cat A 的功能位置相同，空口信号逐比特相同，
+区别全在接口：不分段、没有 O-RAN 压缩和 C-plane。3GPP 不规定压缩（TR 38.816 附录 A 取 2×16 bit），默认用每个 I/Q 分量 w bit
+的均匀定点（`CompressionConfig("fixed", w)`，削波电平按位宽取高斯信号的最优值）。比特率见 `fronthaul.py` 的 `split71_rate`
+（即 TR 38.816 附录 A 7-1 公式中"子载波数 × 符号率 × 天线端口数 × IQ 位宽"一项，传输按 eCPRI IQ 数据消息，与 option 8 同口径），
+`tr38816_rate` 给出 TR 38.816 原式（含其固定开销）作对照。
+
+Cat B 的 U-plane 还可以用调制压缩（`CompressionConfig("modulation", 16)`，CUS v22 附录 A.5，udCompMeth 4）：层符号是未经预编码的
+QAM 点，按星座无损地用 Qm/2 bit 表示每个 I/Q 分量，每 PRB 24·Qm/2 bit、没有 udCompParam，负载随 MCS 变化。实现见
+`compression/modulation.py`（与附录 A.5 解压伪代码、§7.7.4.3 的 scaler 格式逐项对照）与 `fronthaul.py` 的 `ModulationCodec`
+（O-DU 给出逐 RE 的星座信息 `ODU.re_map`：数据为 Qm/2，DMRS、CSI-RS 为 QPSK，空 RE 不承载）。
+
 另有 3GPP split option 8（`category="8"`，TR 38.801 §11.1.2.8）：O-DU 做完预编码后再做 IFFT + CP，前传承载 N_TRX 路
 时域 IQ，没有 C-plane，O-RU 只剩射频。3GPP 不规定 option 8 的接口与压缩（实际由 CPRI 实现），默认按每个 I/Q 分量
 w bit 的均匀定点量化（`CompressionConfig("fixed", w)`，削波电平按位宽取最优），量化噪声落在全部 IFFT 点上（含保护带）。
 实现与比特率见 `fronthaul.py` 的 `TimeDomainCodec`、`option8_rate`，以及 `../cqi_compression/README.md` 的 option 8 一节。
 理想前传时 option 8 与 Cat A 逐比特相同。
 
-### 闭环（`ClosedLoopDownlink`，Sionna RT 信道，随机撒点）
+### 闭环（`ClosedLoopDownlink`，Sionna RT 或 UMi 撒点信道，随机撒点）
 
 在上面的链路外加上 UE 的 CSI 测量上报和 gNB MAC 的链路自适应。各层的处理方式如下：
 
 | 层 | 内容 | 依据 | 本仿真 |
 |---|---|---|---|
 | 物理环境 | 场景几何与材料、O-RU / UE 位置、天线方向图 → 每条链路的 CIR | TR 38.901 §8（射线追踪）、§7.3（阵元方向图） | `rt_channel.py`，Sionna RT 2.2（GPU） |
+| 物理环境（另一种） | cell-free：O-RU 方格布置、UE 随机撒点 → LoS 概率、路损、阴影、簇模型小尺度衰落 | TR 38.901 §7.2–7.5（UMi-Street Canyon）、§7.6.9（绝对到达时间） | `umi_channel.py`，Sionna `tr38901.UMi`（`channel_model="umi"`） |
 | 链路预算 | 发射功率、路径增益、kTB·NF | — | SNR 由位置决定，不再扫描 |
 | L1（下行） | 测量时隙：每 UE 一个预编码 NZP CSI-RS（CMR）、配对 UE 的 CMR 兼作 NZP-IMR、CSI-IM；与 PDSCH 一起经前传发送 | TS 38.211 §7.4.1.5；TS 38.214 §5.2.1.4.1、§5.2.2.3.1、§5.2.2.4、§5.1.4.2 | `csi_rs.py`（设计第 10 条） |
 | L1（UE） | CSI 测量 → 宽带 CQI，reportQuantity = 'cri-RI-CQI'（非 PMI 反馈） | TS 38.214 §5.2.2.1、§5.2.2.5.1、§5.2.1.4.2 | `csi_rs.py` 估计 + `csi.py` 算 CQI；精灵测量作对照 |
@@ -103,6 +117,9 @@ python studies/oran_baseline/rt_closed_loop.py --num-ue 2                       
 python studies/oran_baseline/rt_closed_loop.py --num-ue 2 --category B --uplane bfp:7 --bfw bfp:7 --out results/rt_mu_b7
 python studies/oran_baseline/rt_closed_loop.py --cqi-source genie                    # 对照：精灵 CQI（不发 CSI-RS）
 
+# cell-free 中四种切分（7-1、Cat A、Cat B、option 8）× 压缩方案的前传负载与吞吐：UMi 撒点、CQI 查表选 MCS
+# 运行 studies/oran_baseline/split_fronthaul_load.ipynb
+
 # 闭环中比较 Cat A/B 的压缩失真：先生成撒点文件，两块 GPU 各跑一类（同一批撒点上依次跑各压缩配置），再合并
 python studies/oran_baseline/rt_compare_compression.py --num-ue 2 --save-drops results/drops_mu.json
 CUDA_VISIBLE_DEVICES=0 python studies/oran_baseline/rt_compare_compression.py --categories A --drops-file results/drops_mu.json --out results/csi_mu_a &
@@ -131,6 +148,14 @@ cfg.rt.tx_power_dbm = 35.0                    # 场景、O-RU 位置等见 RTCon
 sim = ClosedLoopDownlink(cfg, LinkAdaptationConfig(bler_target=0.1))
 drops = sim.simulate(num_drops=10, num_batches=16, batch_size=8, warmup_batches=4, seed=1)
 print(drops[0].summary(cfg.slots_per_second))
+
+# cell-free 撒点（TR 38.901 UMi，不用射线追踪）：4 个 O-RU，每 O-RU 功率约束，按天线功率设定定点增益
+from oran import UMiConfig
+cfg = ORANConfig(channel_model="umi", category="7-1", num_oru=4, num_oru_ant=8, num_ue=4, num_ue_ant=2,
+                 num_layers_per_ue=1, mcs_table=2, uplane=CompressionConfig("fixed", 8),
+                 per_oru_power=True, fronthaul_agc=True, umi=UMiConfig(tx_power_dbm=35.0))
+sim = ClosedLoopDownlink(cfg, LinkAdaptationConfig(olla=False))   # 纯 CQI 查表
+drops = sim.simulate(num_drops=5, num_batches=4, batch_size=7, warmup_batches=0, seed=1)
 ```
 
 ## 默认配置（`oran/config.py`）
@@ -159,6 +184,15 @@ print(drops[0].summary(cfg.slots_per_second))
 | CSI / LA | CQI 来自 CSI-RS（`cqi_source="csi-rs"`，可改为 `"genie"`）；CQI 表与 MCS 表同号（脚本默认表 2）；目标 BLER 0.1；OLLA 步长 0.5 dB，范围 ±10 dB |
 | 周期 | CSI-RS 周期 8 个时隙 = 1 个测量时隙 + 7 个数据时隙（共用一个 MCS）；每个撒点 16 个周期，前 4 个（OLLA 收敛）不计入统计 |
 
+UMi cell-free 撒点（`UMiConfig`，`channel_model="umi"`）：
+
+| 项目 | 默认值 |
+|---|---|
+| 布置 | 400 m × 400 m，O-RU 按方格均匀布置（4 个时间距 200 m = TR 38.901 表 7.2-1 的 UMi ISD），高 10 m；UE 均匀撒点、室外、1.5 m、静止，与每个 O-RU 的水平距离 ≥ 10 m |
+| 信道 | TR 38.901 UMi-Street Canyon（Sionna `spec_version="16.1"`，与 V18.0.0 的 UMi 部分相同），LoS 概率、路损、阴影随机；O-RU 阵元全向（可选 38.901 扇区方向图）；§7.6.9 绝对到达时间（每条链路加 d_3D/c，每个 UE 以最早路径定时） |
+| 链路预算 | 每个 O-RU 最大 35 dBm（20 MHz），总功率为 num_oru 倍；UE 噪声系数 9 dB |
+| 相关开关（`ORANConfig`） | `per_oru_power`：预编码整体缩放，使功率最大的 O-RU 恰好满功率（零陷不变）；`fronthaul_agc`：O-DU 按各天线实际功率设定 U-plane 定点增益（Cat A / 7-1 / option 8）；两者默认关闭 |
+
 ## 指标
 
 - **SNR**：每个 RE 的总发射功率为 1（所有 O-RU 所有天线之和），每对收发天线的平均信道增益为 1，
@@ -167,7 +201,8 @@ print(drops[0].summary(cfg.slots_per_second))
 - **接收 EVM**：UE 均衡后的数据符号相对发送符号的误差（含噪声、干扰、信道估计误差和压缩失真）。
 - **发射 EVM**：O-RU 天线口频域信号相对"理想前传"（不量化、不压缩）的误差，只反映前传失真。
 - **U-plane SQNR**：前传 IQ 经定点化 + 压缩后的信号与量化噪声功率比。
-- **前传比特率**：单个 O-RU 链路的 U-plane + C-plane 比特率，含 eCPRI 和以太网开销
+- **前传比特率**：单个 O-RU 链路的 U-plane + C-plane 比特率，含 eCPRI 和以太网开销。7-1 为天线数 × 全部子载波 × 符号率 × 2w；
+  Cat B 调制压缩时按各 UE 当前 MCS 计（数据符号每 PRB 24·Qm/2 bit，DMRS 符号 24 bit），C-plane 另加 SE 5 / SE 6 与 DMRS 段
   （见 `fronthaul.py` 中头部长度的说明）。100 MHz、每层不压缩时为 3276 × 14 × 2000 × 32 = 2.93 Gbps，
   与书中数值一致。option 8 为天线数 × 采样率（IFFT 点数 × 子载波间隔）× 2w，按 eCPRI IQ 数据消息加以太网开销。
 - **宽带 SNR（闭环）**：P_RE·mean|h|²/N0，按每根接收天线、各发射天线等功率计算，不含波束赋形和接收合并增益。
@@ -187,11 +222,12 @@ print(drops[0].summary(cfg.slots_per_second))
 | `pdsch.py` | `PDSCHConfig`（复用 `PUSCHConfig` 的 DMRS / TBS 逻辑）、各 UE 配置、资源网格 |
 | `odu.py` | O-DU High-PHY |
 | `precoding.py` | BD、特征 ZF / RZF，按 PRG 计算与应用 |
-| `compression/` | IQ 压缩算法：`base.py`（基类、定点、比特打包）、`bfp.py`（块浮点）、`block_scaling.py`（块缩放）、`mu_law.py`（μ 律）、`none.py` |
-| `fronthaul.py` | 前传链路（U-plane / C-plane 编解码与统计；option 8 的时域 IQ 量化 `TimeDomainCodec`）、比特率估算 |
+| `compression/` | IQ 压缩算法：`base.py`（基类、定点、比特打包）、`bfp.py`（块浮点）、`block_scaling.py`（块缩放）、`mu_law.py`（μ 律）、`modulation.py`（调制压缩，按 RE 编码）、`none.py` |
+| `fronthaul.py` | 前传链路（U-plane / C-plane 编解码与统计；7-1 的频域均匀定点、option 8 的时域 IQ 量化 `TimeDomainCodec`、调制压缩 `ModulationCodec`）、比特率估算（`fronthaul_rate`、`split71_rate`、`modulation_rate`、`tr38816_rate`） |
 | `oru.py` | O-RU Low-PHY、空口参数（IFFT 点数、保护带、CP） |
 | `channel.py` | 多链路信道（CDL 或射线追踪）、CSI 提取、加信道与噪声 |
 | `rt_channel.py` | Sionna RT 场景、撒点、链路预算、CIR → 频域信道 |
+| `umi_channel.py` | TR 38.901 UMi-Street Canyon 随机信道下的 cell-free 撒点：布置、撒点、链路预算、绝对到达时间、CIR → 频域信道 |
 | `channel_estimation.py` | PRG 感知的 DMRS 信道估计与插值、定时偏差补偿 |
 | `ue.py` | UE 接收机 |
 | `link.py` | 端到端仿真器 `ORANDownlink`、统计量 `LinkStats` |
@@ -199,7 +235,7 @@ print(drops[0].summary(cfg.slots_per_second))
 | `csi.py` | CQI 表、CSI 参考资源、LMMSE SINR、`CQIReporter` |
 | `csi_rs.py` | CSI-RS / CSI-IM 资源与序列（`CSIRS`），UE 侧 CMR / NZP-IMR / CSI-IM 估计（`CSIRSReceiver`） |
 | `link_adaptation.py` | `LinkAdaptation`：CQI → MCS、OLLA |
-| `closed_loop.py` | 闭环仿真器 `ClosedLoopDownlink`、逐撒点结果 `DropResult` |
+| `closed_loop.py` | 闭环仿真器 `ClosedLoopDownlink`（射线追踪或 UMi 撒点）、逐撒点结果 `DropResult` |
 | `../scripts/rt_closed_loop.py` | 闭环仿真脚本（撒点、统计、画图） |
 | `../scripts/rt_compare_compression.py` | 闭环中 Cat A/B × 压缩配置的对比（同一批撒点），汇总、CDF、CQI 高估量 |
 
@@ -294,14 +330,30 @@ print(drops[0].summary(cfg.slots_per_second))
     另外，即使理想前传，BD 只在 PRG 中心子载波置零，PRG 内信道变化带来的残余干扰在高 SNR 时也会被 NZP-IMR 测到
     （精灵 CQI 中同样包含）。
 
+16. **option 7-1 与 Cat A**：两者在 O-DU 的功能相同（预编码、RE 映射），`category="7-1"` 复用 Cat A 的信号链，只换前传：
+    频域均匀定点（`"fixed"`，按位宽取最优削波电平），负载按整个载波计、与调度无关，没有 C-plane。7-1 也可以选 BFP 等方法
+    （非标准），但满负荷时就与 Cat A 完全相同。
+17. **调制压缩（附录 A.5）**：每层每个 OFDM 符号一个段，udIqWidth 取段内最大星座位宽；位宽等于段宽的星座平移（csf = 1），
+    更低阶的星座（DMRS、CSI-RS 与数据同段时）不平移；空 RE 不被任何 mcScaleReMask 指到，O-RU 输出 0，但仍占 U-plane 比特
+    （没有用选择性 RE 发送）。O-RU 满量程与 16 bit 定点相同（回退 15 dB）。唯一的失真是 15 bit scaler 的量化（−66 dB 以下）。
+    C-plane 中 SE 5 / SE 6 与 DMRS 段的字节数是按格式估算的，测量时隙第二组 SE 5 掩码忽略。
+18. **UMi cell-free 撒点**（`umi_channel.py`）：每个撒点新建一次 Sionna 的 `UMi` 并调用一次（`set_topology` 在拓扑不变时会跳过
+    部分随机量，复用对象时同一 seed 不能复现同一信道），UE 静止，信道在整个撒点内不变。cell-free 中各 O-RU 与 UE 的距离不同，
+    默认按 §7.6.9 给每条链路加 d_3D/c，BD 只在 PRG 中心子载波零陷，PRG 内的时延差带来残余干扰；有效 SINR 主要受它限制。
+    只撒室外 UE（表 7.2-1 中 80% 在室内）。
+19. **cell-free 的功率与定点**：`per_oru_power` 把预编码整体缩放到"最强 O-RU 恰好满功率"，总功率因此低于 num_oru·P_oru；
+    离所有 UE 都远的 O-RU 天线功率可比标称低 20 dB 以上，`fronthaul_agc` 让 O-DU 按各天线实际功率（由权值算出）设定定点增益，
+    均匀定点（7-1、option 8）才能用到最优削波电平。
+
 ## 扩展
 
 - **新的压缩算法**：在 `compression/` 下新建文件，继承 `IQCompressor`，设置 `method`（注册名）和
   `param_bits`（每块压缩参数的比特数），实现 `compress` / `decompress`，在 `compression/__init__.py`
   中用 `register_compressor` 注册。之后 `CompressionConfig("新名字", iq_width=...)` 即可在 U-plane
-  和 Cat B 权值上使用。O-RAN 定义而尚未实现的方法：modulation compression、选择性 RE 发送。
-- **cell-free**：`num_oru > 1` 时，所有 O-RU 的天线拼成一个 N_t 维阵列做集中式预编码；Cat A 每个 O-RU
-  只收自己天线的端口流，Cat B 每个 O-RU 都收全部层流和自己那部分权值。`link_gain_db` 给出各链路的大尺度增益。
+  和 Cat B 权值上使用。O-RAN 定义而尚未实现的方法：选择性 RE 发送（附录 A.6）。
+- **cell-free**：`num_oru > 1` 时，所有 O-RU 的天线拼成一个 N_t 维阵列做集中式预编码；Cat A / 7-1 / option 8 每个 O-RU
+  只收自己天线的流，Cat B 每个 O-RU 都收全部层流和自己那部分权值。CDL 模式由 `link_gain_db` 给出各链路的大尺度增益，
+  UMi 撒点模式由位置决定。尚未实现：用户中心的服务簇（每个 UE 只由部分 O-RU 服务，需要改预编码）。
 - **DAC / 模拟波束赋形**：`ORU(dac=callable)` 传入作用于时域样点的函数。
 - **自建场景**：`RTConfig.scene` 指向 Mitsuba XML 文件（可用 Blender + OSM 导入），再按场景调整
   `oru_positions`、`oru_look_at` 和撒点参数。`num_oru > 1` 时每个 O-RU 都是场景中的一个发射机，

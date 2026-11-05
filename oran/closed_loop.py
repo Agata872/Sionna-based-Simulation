@@ -1,7 +1,10 @@
-"""闭环下行仿真：物理环境（Sionna RT）中的 UE 位置 → CSI / CQI → MAC 链路自适应 → PDSCH → CRC → OLLA。
+"""闭环下行仿真：UE 位置 → CSI / CQI → MAC 链路自适应 → PDSCH → CRC → OLLA。
+
+信道由 UE 位置决定：Sionna RT 射线追踪（channel_model="rt"），或 TR 38.901 UMi-Street Canyon 随机信道下的
+cell-free 撒点（channel_model="umi"，见 umi_channel.py）。
 
 每个撒点（drop）：
-    在覆盖区内随机放置 K 个静止 UE，射线追踪得到各 (UE, O-RU) 链路的信道（含链路预算）；
+    在覆盖区内随机放置 K 个静止 UE，射线追踪（或 UMi 随机信道）得到各 (UE, O-RU) 链路的信道（含链路预算）；
     重复 num_batches 个 CSI-RS 周期，每个周期 = 1 个测量时隙 + batch_size 个数据时隙：
         O-DU 由 CSI（TDD 互易，假设理想）计算 BD 预编码                                      [L1, O-DU]
         测量时隙：预编码 CSI-RS + CSI-IM 与 PDSCH 一起经前传（Cat A/B、压缩）、O-RU、信道到达 UE；
@@ -93,7 +96,7 @@ class DropResult:
 
 
 class ClosedLoopDownlink:
-    """射线追踪场景中的闭环（CSI-RS → CQI → MCS → OLLA）下行仿真。
+    """射线追踪场景或 UMi 撒点中的闭环（CSI-RS → CQI → MCS → OLLA）下行仿真。
 
     >>> cfg = ORANConfig(channel_model="rt", num_ue=1, mcs_table=2)
     >>> sim = ClosedLoopDownlink(cfg)
@@ -102,8 +105,8 @@ class ClosedLoopDownlink:
 
     def __init__(self, cfg: ORANConfig, la_cfg: Optional[LinkAdaptationConfig] = None,
                  precision: Optional[str] = None):
-        if cfg.channel_model != "rt":
-            raise ValueError("闭环仿真需要射线追踪信道（channel_model='rt'）")
+        if cfg.channel_model not in ("rt", "umi"):
+            raise ValueError("闭环仿真需要由位置决定的信道（channel_model='rt' 或 'umi'）")
         self.cfg = cfg
         self.la_cfg = la_cfg or LinkAdaptationConfig()
         self.sim = ORANDownlink(cfg, precision)
@@ -123,6 +126,7 @@ class ClosedLoopDownlink:
 
     @property
     def rt_channel(self):
+        """信道源：:class:`~oran.rt_channel.RTChannel` 或 :class:`~oran.umi_channel.UMiChannel`。"""
         return self.sim.channel.model
 
     @property
@@ -138,7 +142,12 @@ class ClosedLoopDownlink:
 
         覆盖图与 PathSolver 都是蒙特卡洛射线追踪，个别位置在覆盖图中达到门限、PathSolver 却找不到
         足够的路径；射线追踪后路径增益比门限低 10 dB 以上时换一个种子重撒。
+        UMi 撒点时 seed 同时决定位置、LoS 状态、阴影衰落和小尺度衰落。
         """
+        if self.cfg.channel_model == "umi":
+            positions = self.rt_channel.drop_ues(self.cfg.num_ue, seed)
+            self.sim.channel.set_ue_positions(positions, seed=seed)
+            return positions
         threshold = self.cfg.rt.drop_min_path_gain_db - 10
         for attempt in range(20):
             positions = self.scene.drop_ues(self.cfg.num_ue, seed + 1_000_003 * attempt)
