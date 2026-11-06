@@ -19,6 +19,7 @@
 | `closed_loop_walkthrough.ipynb` | 演示 | 按信号流向逐模块演示闭环仿真，每一步画出中间结果 |
 | `split_fronthaul_load.ipynb` | 运行 + 汇总 | F1：cell-free UMi 撒点，四种切分 × 压缩方案（含 Cat B 调制压缩），CQI 查表选 MCS；负载与吞吐、最小负载、UE 星座图、负载随天线数与 PRB 占用率的变化 |
 | `experiments.md` | 索引 | 2026-11 之后的实验登记（目的、设置、运行目录、结论） |
+| `report/` | 报告 | 本方向的英文研究报告（LaTeX）：`main.tex`；`make_figures.py` 用 `results/` 中已有数据重画 E1–E3 的英文图并复制 F1 的图到 `figures/`；在该目录运行 `latexmk` 生成 `main.pdf` |
 
 `rt_closed_loop.py` 与 `rt_compare_compression.py` 复用 `compare_cat_a_b.py` 中的压缩配置解析。
 

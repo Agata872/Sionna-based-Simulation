@@ -1,0 +1,8 @@
+# LaTeX build products (main.pdf is already ignored by the repository-wide *.pdf rule)
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.synctex.gz
