@@ -7,11 +7,11 @@
 | 项目 | 版本 / 配置 |
 |---|---|
 | Sionna | `sionna` 2.2.0（PHY 链路级 + SYS 系统级 + RT 射线追踪） |
-| Sionna RT | `sionna-rt` 2.2.0（Mitsuba 3.9.1 / Dr.Jit 1.5.0），GPU 运行依赖 580 用户态库，见注意事项 2 |
+| Sionna RT | `sionna-rt` 2.2.0（Mitsuba 3.9.1 / Dr.Jit 1.5.0），GPU 运行需另行提供 OptiX 库，见注意事项 2 |
 | PyTorch | 2.14.1+cu126（CUDA 12.6 构建） |
 | Python | 3.12.3（虚拟环境 `.venv`） |
 | GPU | 2 × Tesla T4（每块约 14.6 GiB 可用显存） |
-| NVIDIA 驱动 | 内核模块 535.288.01（全机共用）；本账号额外使用 580.178.04 用户态库 |
+| NVIDIA 驱动 | 595.91.07（全机共用，2026-11-12 起，只装了计算库）；本账号额外使用同版本的 OptiX 库 |
 | 系统 | Ubuntu 24.04.4 LTS |
 
 ## 目录结构
@@ -44,7 +44,7 @@ Sionna-based Simulation/
 ├── requirements.txt        # 锁定的依赖版本
 └── README.md
 
-~/.local/nvidia/580.178.04/   # 580 驱动的用户态库（不纳入 git，安装方法见注意事项 2）
+~/.local/nvidia/optix-595.91.07/   # 与系统驱动同版本的 OptiX 库（不纳入 git，安装方法见注意事项 2）
 ```
 
 ## 研究方向
@@ -107,7 +107,8 @@ python studies/oran_baseline/compare_cat_a_b.py      # Cat A/B 对比，结果�
 
 ### 1. 不要从 PyPI 安装或升级 torch
 
-PyPI 上默认的 torch 是 CUDA 13 构建，需要驱动 ≥ 580；本机驱动是 535，装上后 GPU 会不可用。
+本环境锁定 `torch==2.14.1+cu126`（CUDA 12.6 构建），`verify_env.py` 第 1 项会检查这一点。
+PyPI 上默认的 torch 是 CUDA 13 构建，需要驱动 ≥ 580，在驱动较旧的机器上装上后 GPU 会不可用。
 安装其他包时，建议把 torch 一并写上，防止被替换：
 
 ```bash
@@ -116,49 +117,51 @@ pip install <包名> "torch==2.14.1+cu126"
 
 装完新包后，可以运行 `python verify_env.py` 确认 GPU 仍然可用。
 
-### 2. 射线追踪 Sionna RT 依赖 580 用户态库
+### 2. 射线追踪 Sionna RT 需要另行提供 OptiX 库
 
-**问题**：Sionna RT 2.1.0 及以后的版本依赖 Dr.Jit 1.5.0，它生成的 `copysign` 指令不被 535 驱动
-自带的 OptiX 支持，GPU 射线追踪会直接崩溃（`optix.ptx.copysign.f32` 未实现）。
+**现状（2026-11-12 起）**：系统驱动是 595.91.07，但只装了计算相关的库（libcuda、NVML 等），
+没有 OptiX（`libnvoptix.so.1`、`libnvidia-rtcore`）。PHY / SYS 直接可用；Sionna RT 默认选 GPU 后端，
+找不到 OptiX 时 `load_scene` 报 `Could not initialize OptiX!`。
 
-**不能直接升级驱动**：驱动的内核模块全机共用，升级需要 root 并重启。2026-02-27 曾尝试升级到
-590-server，机器未能正常启动，随后被退回 535 并用 `apt-mark hold` 锁定。升级前须先与管理员确认。
-
-**本环境的做法**：内核模块保持 535 不变，只让本账号的进程加载 580 驱动的用户态库（libcuda、
-OptiX 等）。T4 是数据中心 GPU，支持 NVIDIA 的 CUDA 前向兼容，新版 libcuda 可以运行在旧版内核模块上。
-这些库放在 `~/.local/nvidia/580.178.04/`，通过 `LD_LIBRARY_PATH` 生效：
+**本环境的做法**：从同版本的 Ubuntu 驱动包中只提取 OptiX 相关的库，放在 `~/.local/nvidia/optix-595.91.07/`，
+通过 `LD_LIBRARY_PATH` 生效：
 
 - 终端：`source env.sh` 时自动设置
 - VS Code：Python / Jupyter 内核启动时读取项目根目录的 `.env`；修改 `.env` 后需重启内核
 
-不设置时（例如没有 `source env.sh` 就运行脚本），PHY / SYS 照常可用，但 GPU 射线追踪会崩溃。
-`python verify_env.py` 的第 6 项会检查这一点。
-
-已验证：GPU 射线追踪结果与 CPU 后端一致（信道增益最大差 0.009 dB），
-`tutorials/sys/LinkAdaptation.ipynb` 可完整运行。其余 RT 教程未逐一测试。
+不设置时（例如没有 `source env.sh` 就运行脚本），PHY / SYS 照常可用，但 GPU 射线追踪不可用。
+`python verify_env.py` 的第 6 项会检查这一点（2026-11-12 在 595.91.07 上全部通过）。
 
 注意：
 
-- NVIDIA 官方的前向兼容只覆盖 CUDA 相关库，OptiX 以这种方式使用不在官方保证范围内。
-  遇到异常的 OptiX 报错时，先考虑这个原因。
-- 如果以后系统驱动升级到 580.178.04 以后的版本，须删掉 `env.sh` 和 `.env` 中的这项设置，
-  否则用户态库会比内核模块旧，GPU 将不可用。
+- 该目录中只能有 OptiX 相关的库，不要放 libcuda。`LD_LIBRARY_PATH` 中的 libcuda 会取代系统的版本，
+  一旦比内核模块旧，CUDA 初始化报 Error 803（`system has unsupported display driver / cuda driver combination`），
+  表现为 `torch.cuda.is_available()` 为 False、Sionna 报 `Invalid device: cuda:0`。
+- 系统驱动再次升级后，须按新的版本号重新提取 OptiX 库，并同步修改 `env.sh` 和 `.env`。
+  如果届时系统自带 OptiX（`ldconfig -p | grep nvoptix` 有输出），删掉这项设置即可。
 
-安装 580 用户态库（不需要 sudo，只解压不安装，约 500 MB）：
+安装 OptiX 库（不需要 sudo，只解压不安装，约 140 MB）：
 
 ```bash
-mkdir -p /tmp/nv580 && cd /tmp/nv580
-apt-get download libnvidia-compute-580-server libnvidia-gl-580-server
-for d in *.deb; do dpkg-deb -x "$d" root; done
-ls root/usr/lib/x86_64-linux-gnu/libcuda.so.580.*   # 确认版本号，若不是 580.178.04，须同步修改 env.sh 和 .env
-mkdir -p ~/.local/nvidia/580.178.04
-cd root/usr/lib/x86_64-linux-gnu
-# 只拷贝 CUDA / OptiX 相关的库，不要拷贝 OpenGL / Vulkan 等图形库
-cp -a libcuda.so* libcudadebugger.so* libnvidia-ptxjitcompiler.so* libnvidia-nvvm.so* \
-      libnvidia-nvvm70.so* libnvidia-gpucomp.so* libnvoptix.so* libnvidia-rtcore.so* \
-      ~/.local/nvidia/580.178.04/
-rm -rf /tmp/nv580
+V=595.91.07   # 与 nvidia-smi 显示的驱动版本一致；若更改，须同步修改 env.sh 和 .env
+mkdir -p /tmp/nvoptix && cd /tmp/nvoptix
+# -server 包的版本号与本机驱动一致；非 server 的 libnvidia-gl-595 是另一个版本，不能用
+apt-get download libnvidia-gl-595-server=$V-0ubuntu0.24.04.1
+dpkg-deb -x libnvidia-gl-595-server_*.deb root
+mkdir -p ~/.local/nvidia/optix-$V
+cp -a root/usr/lib/x86_64-linux-gnu/libnvoptix.so.$V root/usr/lib/x86_64-linux-gnu/libnvidia-rtcore.so.$V \
+      root/usr/share/nvidia/nvoptix.bin ~/.local/nvidia/optix-$V/
+ln -s libnvoptix.so.$V ~/.local/nvidia/optix-$V/libnvoptix.so.1
+rm -rf /tmp/nvoptix
 ```
+
+**历史（2026-10-04 至 2026-11-12）**：当时内核模块是 535.288.01（2026-02-27 升级到 590-server 后机器未能正常启动，
+被退回 535 并用 `apt-mark hold` 锁定）。Sionna RT 2.1.0 及以后的版本依赖 Dr.Jit 1.5.0，它生成的 `copysign`
+指令不被 535 驱动自带的 OptiX 支持，GPU 射线追踪会直接崩溃（`optix.ptx.copysign.f32` 未实现）。当时的做法是
+让本账号的进程加载 580.178.04 的全套用户态库（含 libcuda，依赖 CUDA 前向兼容），放在 `~/.local/nvidia/580.178.04/`。
+在那套配置下验证过 GPU 射线追踪结果与 CPU 后端一致（信道增益最大差 0.009 dB）。
+2026-11-12 系统驱动升级到 595.91.07 后，这套 580 的 libcuda 比内核模块旧，继续加载使 GPU 不可用（上面的 Error 803），
+已从 `env.sh` 和 `.env` 中移除；`~/.local/nvidia/580.178.04/` 不再使用，可以删除。
 
 ### 3. 双 GPU 并行
 
@@ -190,7 +193,7 @@ CUDA_VISIBLE_DEVICES=1 python sim_b.py &
   .venv/bin/python -m pip install -r requirements.txt
   ```
 
-- **不需要 580 用户态库**：libcuda 由 Windows 驱动提供（`/usr/lib/wsl/lib`），版本已 ≥ 580。
+- **libcuda 由 Windows 驱动提供**（`/usr/lib/wsl/lib`），版本已 ≥ 580，不需要另装。
 - **OptiX 需另行提供**：Windows 驱动不向 WSL 提供可用的 OptiX，Sionna RT 默认选 GPU 后端，
   `load_scene` 会报 `Could not initialize OptiX!`。做法是从版本最接近的 Linux 驱动中只提取 OptiX 相关的库
   （不需要 sudo，不修改 Windows），`env.sh` 在 WSL 下自动把该目录加入 `LD_LIBRARY_PATH`，`.env` 同理：
@@ -238,7 +241,8 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-然后按注意事项 2 安装 580 用户态库。如果新机器的驱动已经 ≥ 580，则不需要这些库，
+新机器的驱动须 ≥ 580（535 自带的 OptiX 不能用，见注意事项 2 的历史部分）。然后检查系统是否自带 OptiX
+（`ldconfig -p | grep nvoptix`）：没有输出时按注意事项 2 提取与驱动同版本的 OptiX 库；有输出时不需要这些库，
 删掉 `env.sh` 和 `.env` 中的 `LD_LIBRARY_PATH` 设置即可。WSL2 下的做法见注意事项 5。
 
 ## 参考

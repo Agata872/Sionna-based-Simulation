@@ -14,6 +14,7 @@
   6. 射线追踪 Sionna RT：在 GPU 上计算街道场景中的传播路径
 """
 
+import ctypes
 import os
 import re
 import sys
@@ -47,7 +48,7 @@ def check_versions():
                 "numpy", "scipy", "matplotlib", "h5py"):
         print(f"{pkg:<14}{version(pkg)}")
     print(f"torch 编译时的 CUDA 版本：{torch.version.cuda}")
-    # 本机驱动为 535（最高支持 CUDA 12.2），CUDA 13 构建的 torch 无法使用 GPU
+    # 本环境锁定 CUDA 12.6 构建（requirements.txt）；CUDA 13 构建要求驱动 >= 580
     assert torch.version.cuda and torch.version.cuda.startswith("12."), \
         "torch 不是 CUDA 12.x 构建，请按 README 从 cu126 源重新安装"
 
@@ -193,7 +194,7 @@ def check_rt():
         subcarrier_frequencies
 
     # 535 驱动自带的 OptiX 不支持 Dr.Jit 1.5 生成的 copysign 指令，一做射线追踪进程就会崩溃，
-    # 所以先确认加载的是 580 用户态库（source env.sh 或 VS Code 读取 .env 后才会生效）
+    # 所以先确认 libcuda 的版本，以及能找到 OptiX 库（source env.sh 或 VS Code 读取 .env 后才会生效）
     torch.cuda.init()
     libcuda = loaded_library("libcuda.so")
     print(f"libcuda：{libcuda}")
@@ -206,7 +207,12 @@ def check_rt():
     else:
         match = re.search(r"libcuda\.so\.(\d+)\.", libcuda or "")
         assert match and int(match.group(1)) >= 580, \
-            "加载的不是 580 用户态库，请先 source env.sh（见 README 注意事项 2）"
+            "libcuda 的版本低于 580，驱动过旧，GPU 射线追踪会崩溃（见 README 注意事项 2）"
+        # 系统驱动可能只装了计算库而没有 OptiX，这时须从同版本的驱动包中提取并加入 LD_LIBRARY_PATH
+        try:
+            ctypes.CDLL("libnvoptix.so.1")
+        except OSError:
+            raise AssertionError("找不到 libnvoptix.so.1，请先 source env.sh（见 README 注意事项 2）") from None
     print(f"Mitsuba 变体：{mi.variant()}")
     assert mi.variant().startswith("cuda"), "Sionna RT 没有使用 GPU 后端"
 

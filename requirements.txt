@@ -1,4 +1,4 @@
-# Sionna 仿真环境锁定版本（Python 3.12，Ubuntu 24.04，NVIDIA 驱动 535 + 580 用户态库，见 README）
+# Sionna 仿真环境锁定版本（Python 3.12，Ubuntu 24.04，NVIDIA 驱动 595.91.07，见 README）
 # 复现：python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
 # torch 必须用 CUDA 12.6 构建（+cu126），PyPI 默认的 CUDA 13 构建需要驱动 >= 580
 --extra-index-url https://download.pytorch.org/whl/cu126
