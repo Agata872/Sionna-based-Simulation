@@ -1,3 +1,5 @@
 /main.bbl
 /main.pdf
 /main.synctex.gz
+# Pre-rendered figures (built by Figure/build_figures.sh) are tracked despite the repo-wide *.pdf rule
+!/Figure/fig_*.pdf
