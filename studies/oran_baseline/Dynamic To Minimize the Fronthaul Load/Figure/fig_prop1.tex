@@ -1,0 +1,28 @@
+% Proposition 1: compression caps the SINR. Data: data/fig_prop1.dat (S14).
+\begin{tikzpicture}
+\begin{axis}[
+  width=\columnwidth, height=5.0cm,
+  xlabel={BFP width $w$ (7-1) / $b$ (7-2 weights) [bit]},
+  ylabel={mean SINR [dB]},
+  xmin=3.6, xmax=12.4, ymin=12, ymax=40,
+  xtick={4,5,...,12},
+  grid=major, grid style={gray!20},
+  legend style={font=\scriptsize, at={(0.5,-0.30)}, anchor=north, legend columns=2, cells={anchor=west}},
+  tick label style={font=\scriptsize}, label style={font=\footnotesize},
+]
+\addplot[black, dashed, thick, restrict x to domain=4:12] table[x=w, y=ideal] {Figure/data/fig_prop1.dat};
+\addlegendentry{ideal fronthaul}
+\addplot[blue!70!black, thick, restrict x to domain=4:12] table[x=w, y=model71] {Figure/data/fig_prop1.dat};
+\addlegendentry{7-1, Prop.~\ref{prop:cap}}
+\addplot[blue!70!black, only marks, mark=o, restrict x to domain=4:12] table[x=w, y=sim71] {Figure/data/fig_prop1.dat};
+\addlegendentry{7-1, O-RAN codec}
+\addplot[red!75!black, thick, restrict x to domain=4:12] table[x=w, y=model72] {Figure/data/fig_prop1.dat};
+\addlegendentry{7-2 weights, Prop.~\ref{prop:cap}}
+\addplot[red!75!black, only marks, mark=square, restrict x to domain=4:12] table[x=w, y=sim72] {Figure/data/fig_prop1.dat};
+\addlegendentry{7-2 weights, O-RAN codec}
+\addplot[blue!70!black, dotted, thick, restrict x to domain=4:12] table[x=w, y=ceil71] {Figure/data/fig_prop1.dat};
+\addlegendentry{ceiling $G/\rho(w)$}
+\addplot[gray, densely dashdotted] coordinates {(3.6,22.3) (12.4,22.3)};
+\addlegendentry{highest MCS (256QAM)}
+\end{axis}
+\end{tikzpicture}

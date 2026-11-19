@@ -1,0 +1,23 @@
+% (P2) sum SE under a fronthaul capacity limit. Data: data/fig_p2_k4.dat, data/fig_p2_k16.dat (S14).
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.2cm},
+  width=0.48\textwidth, height=4.8cm,
+  xmode=log, xmin=0.3, xmax=40, ymin=0, ymax=1.03,
+  xlabel={fronthaul capacity $C$ [Gbit/s]},
+  grid=major, grid style={gray!20},
+  tick label style={font=\scriptsize}, label style={font=\footnotesize}, title style={font=\footnotesize},
+]
+\nextgroupplot[title={$K=4$}, ylabel={mean $\mathrm{SE}/\mathrm{SE}_{\max}$},
+  legend style={font=\scriptsize, at={(1.07,-0.30)}, anchor=north, cells={anchor=west}}, legend columns=3]
+\addplot[blue!70!black, thick] table[x=C, y=cf] {Figure/data/fig_p2_k4.dat}; \addlegendentry{Algorithm~\ref{alg:cf}}
+\addplot[gray, thick, densely dashed] table[x=C, y=uni] {Figure/data/fig_p2_k4.dat}; \addlegendentry{network-wide split and width}
+\addplot[black, thick, dotted] table[x=C, y=b0] {Figure/data/fig_p2_k4.dat}; \addlegendentry{\cite{girycki2024eucnc} (no compression)}
+\addplot[gray!60, densely dashdotted, forget plot] coordinates {(0.3,0.98) (40,0.98)};
+\nextgroupplot[title={$K=16$}]
+\addplot[blue!70!black, thick] table[x=C, y=cf] {Figure/data/fig_p2_k16.dat};
+\addplot[gray, thick, densely dashed] table[x=C, y=uni] {Figure/data/fig_p2_k16.dat};
+\addplot[black, thick, dotted] table[x=C, y=b0] {Figure/data/fig_p2_k16.dat};
+\addplot[gray!60, densely dashdotted, forget plot] coordinates {(0.3,0.98) (40,0.98)};
+\end{groupplot}
+\end{tikzpicture}

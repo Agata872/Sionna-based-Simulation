@@ -1,0 +1,27 @@
+% Value of adaptation vs antennas per RU. Data: data/fig_dyn_mcs.dat, data/fig_dyn_mcs4.dat (S10, S11).
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.2cm},
+  width=0.48\textwidth, height=5.0cm,
+  xmode=log, log basis x=2, xtick={1,2,4,8,16,32,64}, xticklabels={1,2,4,8,16,32,64},
+  xlabel={antennas per RU $K$}, ymin=1, ymax=9,
+  grid=major, grid style={gray!20},
+  tick label style={font=\scriptsize}, label style={font=\footnotesize}, title style={font=\footnotesize},
+]
+\nextgroupplot[title={256QAM (MCS table 2)}, ylabel={mean fronthaul load [Gbit/s]},
+  legend style={font=\scriptsize, at={(1.07,-0.30)}, anchor=north, cells={anchor=west}}, legend columns=6]
+\addplot[black, thick, mark=*, mark size=1.2pt] table[x=K, y=ST] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{ST: fully static}
+\addplot[orange!85!black, thick, mark=triangle*] table[x=K, y=F] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{F: split fixed}
+\addplot[gray, thick, mark=diamond*] table[x=K, y=SU] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{SU: network-wide}
+\addplot[violet, thick, mark=pentagon*] table[x=K, y=G] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{G: width fixed}
+\addplot[blue!70!black, thick, mark=square*, mark size=1.2pt] table[x=K, y=S] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{S: per state}
+\addplot[red!75!black, dashed, thick] table[x=K, y=D] {Figure/data/fig_dyn_mcs.dat}; \addlegendentry{D: per drop}
+\nextgroupplot[title={1024QAM (MCS table 4)}]
+\addplot[black, thick, mark=*, mark size=1.2pt] table[x=K, y=ST] {Figure/data/fig_dyn_mcs4.dat};
+\addplot[orange!85!black, thick, mark=triangle*] table[x=K, y=F] {Figure/data/fig_dyn_mcs4.dat};
+\addplot[gray, thick, mark=diamond*] table[x=K, y=SU] {Figure/data/fig_dyn_mcs4.dat};
+\addplot[violet, thick, mark=pentagon*] table[x=K, y=G] {Figure/data/fig_dyn_mcs4.dat};
+\addplot[blue!70!black, thick, mark=square*, mark size=1.2pt] table[x=K, y=S] {Figure/data/fig_dyn_mcs4.dat};
+\addplot[red!75!black, dashed, thick] table[x=K, y=D] {Figure/data/fig_dyn_mcs4.dat};
+\end{groupplot}
+\end{tikzpicture}

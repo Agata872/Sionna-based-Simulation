@@ -1,0 +1,596 @@
+% \documentclass[10pt,conference]{IEEEtran}
+\documentclass[10pt, final, journal, letterpaper, twocolumn]{IEEEtran}
+% \documentclass[12pt, draftclsnofoot, journal, letterpaper, onecolumn]{IEEEtran}
+% \documentclass[a4paper,11pt]{article}
+% \documentclass[conference]{IEEEtran}
+\setlength{\columnsep}{0.24in}
+\IEEEoverridecommandlockouts
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{array}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}
+% \usepackage[hidelinks,
+%             colorlinks=true,
+%             citecolor=blue,
+%             linkcolor=black,
+%             urlcolor=blue]{hyperref}
+\usepackage[hidelinks]{hyperref}
+\usepackage{orcidlink}
+%\usepackage{chgbar}
+\usepackage{stfloats}
+\usepackage{diagbox}
+\usepackage{graphicx}
+\usepackage{footnote}
+%\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+%\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{subeqnarray}
+\usepackage{cases}
+\usepackage{threeparttable}
+\usepackage{xcolor}
+\usepackage{epstopdf}
+\usepackage{algpseudocode}
+\usepackage{bm}
+\usepackage{multirow}
+% to add parentheses around subfig references
+\usepackage[labelformat=simple]{subcaption}
+\usepackage[font=small]{caption}
+\usepackage{adjustbox}
+\usepackage[subpreambles=true]{standalone}
+% http://tex.stackexchange.com/questions/163246/resize-a-tabular-object-to-textwidth
+
+% Glossaries
+\usepackage[xindy, toc, numberedsection, acronym]{glossaries}
+\loadglsentries{abbr.tex}
+% \makeglossaries
+\glsdisablehyper
+\renewcommand\thesubfigure{(\alph{subfigure})}
+\newtheorem{theorem}{Theorem}
+\newtheorem{remark}{Remark}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{definition}{Definition}
+\newtheorem{problem}{Problem}
+\newtheorem{corollary}{Corollary}
+
+% Use Tikz to input figure
+% \usepackage{tikz}
+% \usepackage{caption,subcaption}
+% \usetikzlibrary{arrows.meta,positioning,calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+
+% Clever reference
+\usepackage[capitalise]{cleveref}
+
+% Typesetting and defining symbols:
+\usepackage{xifthen}
+\newcommand{\mb}{\mathbf}
+\newcommand{\tb}{\textbf}
+\newcommand{\bs}{\boldsymbol}
+\newcommand{\sss}{\scriptscriptstyle}
+\newcounter{mytempeqncnt}
+\newcommand{\prob}[1][]{%requires xifthen package%
+\ifthenelse{\isempty{#1}}%
+      {\ensuremath{P}}%
+    {\ensuremath{P\left\(#1\right\)}}%
+}
+\newcommand{\vect}[1]{\boldsymbol{\mathrm{#1}}}
+\newcommand{\mat}[1]{\boldsymbol{\mathrm{#1}}}
+\newcommand{\MSE}{\mathrm{MSE}}
+\newcommand{\tr}{\mathrm{tr}}
+\newcommand{\moddef}{\mathrm{mod}}
+\newcommand{\diag}{\mathrm{diag}}
+\newcommand{\vecop}{\text{vec}}
+\newcommand{\CP}{L}
+\newcommand{\hddots}{\hdots}
+\newcommand*{\inC}[1]{\in\mathbb{C}^{#1}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand{\expt}[1]{\mathbb{E} \left\{#1\right\}}
+\newcommand{\cn}[2]{\ensuremath{\sim\mathcal{C}\mathcal{N}\left(#1,#2\right)}}
+
+% SI-units
+\usepackage[per-mode=symbol]{siunitx}
+\DeclareSIUnit{\dBm}{dBm}
+
+\sisetup{
+  detect-all, 
+  mode = text,  
+  space-before-unit = false 
+}
+% line break in a table
+\newcommand{\tabincell}[2]{\begin{tabular}{@{}#1@{}}#2\end{tabular}}
+
+% Use Biblatex
+\usepackage[backend=biber, style=ieee, maxnames=6, minnames=1, doi=false, url=false, eprint=false, isbn=false]{biblatex}
+%\usepackage[backend=biber,language=dutch]{biblatex}
+\addbibresource{IEEEabrv.bib}
+\addbibresource{main.bib}
+\AtBeginBibliography{\footnotesize}
+
+% \setlength{\abovecaptionskip}{4pt}
+% \setlength{\belowcaptionskip}{-10pt}
+
+\begin{document}
+
+\title{Dynamic Compression With Fronthaul Load Estimation}
+
+\author{
+    \IEEEauthorblockN{Tianzheng Miao\orcidlink{0009-0006-3344-7222}, Md Arifur Rahman\orcidlink{0000-0003-3861-9290}, François Rottenberg\orcidlink{0000-0002-2150-8511}}
+    
+    \thanks{
+      Tianzheng Miao is with the Research and Innovation Department, IS-Wireless, Piaseczno, Poland (e-mail: t.miao@is-wireless.com), and also with ESAT-DRAMCO, KU Leuven, Ghent, Belgium (e-mail:tianzheng.miao@kuleuven.be).
+
+      F. Rottenberg are with ESAT-DRAMCO, KU Leuven, Ghent, Belgium (e-mail: {francois.rottenberg}@kuleuven.be).
+
+      M. A. Rahman is with Research and Innovation Department, IS-Wireless, Piaseczno, Poland (e-mail: a.rahman@is-wireless.com).
+
+      This work has received funding from the European Union's Horizon 2022 research and innovation program under Grant Agreement No 101120332 (EMPOWER-6G project).
+    }
+}
+
+\maketitle
+
+% Draft notes (remove before submission)
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\note}[1]{\textcolor{blue}{[Note: #1]}}
+
+\begin{abstract}
+\todo{Draft abstract.} Cell-free massive MIMO deployed over the O-RAN lower-layer split must decide, for every radio unit (RU), which functional split carries its fronthaul traffic and how strongly the traffic is compressed. The fronthaul load model of Girycki \emph{et al.} selects between the 7-1 split (beamforming in the distributed unit, antenna-level IQ) and the O-RAN 7-2 split (beamforming in the RU, UE-layer symbols) for uncompressed 32-bit IQ samples. We extend this model with the O-RAN compression methods---block floating point for antenna-level IQ and beamforming weights, and modulation compression for UE-layer symbols---and with the uplink channel information. We show that compression acts as a per-UE SINR ceiling, derive a closed-form per-RU switching threshold between the two splits, a water-filling rule for the per-RU compression widths, and the number of antennas per RU beyond which a static split is optimal. The resulting three-step allocation matches a per-RU optimizer that enumerates all splits and widths within 0.4\% and is verified with the O-RAN codecs. In the reference scenario of Girycki \emph{et al.}, adapting split and compression to the network state reduces the mean fronthaul load by 36--45\% for RUs with up to eight antennas, mainly through switching the split; adapting the compression ratio over time adds 3--8\% with 256QAM and 7--10\% with 1024QAM.
+\end{abstract}
+
+\glsresetall
+\section{Introduction}
+\label{sec:introduction}
+
+\todo{Write the introduction. Planned structure:}
+\begin{itemize}
+  \item Cell-free massive MIMO~\cite{ngo2017cellfree,interdonato2019ubiquitous,ref2} and its fronthaul burden; O-RAN as the deployment architecture~\cite{polese2023oran}.
+  \item Functional splits: 3GPP Options 7-1, 7-2 and 8~\cite{tr38801,tr38816}; O-RAN 7-2x with Category A/B O-RUs~\cite{oran_cus_v22}.
+  \item Girycki \emph{et al.}~\cite{girycki2024eucnc}: fronthaul load formulas for 7-1 and 7-2 in cell-free networks, dynamic beamforming and split selection; uncompressed 32-bit IQ, constant signalling overheads from TR 38.816~\cite{tr38816}; serving access points (APs) selected by the precoding-aware heuristics of~\cite{girycki2024twc}.
+  \item O-RAN compression~\cite{oran_cus_v22,lagen2021modcomp,ref3}: block floating point (BFP) for IQ and beamforming weights, modulation compression for unprecoded constellation points.
+  \item Gap: how compression changes the split decision; whether dynamic adaptation is still needed once the fronthaul is compressed; which part of the adaptation (split, compression ratio, per-RU heterogeneity, time scale) carries the gain.
+  \item Contributions: (i) compression as a per-UE SINR ceiling (Proposition~\ref{prop:cap}); (ii) closed-form per-RU split threshold (Proposition~\ref{prop:threshold}); (iii) water-filling of the compression widths across RUs (Proposition~\ref{prop:wf}); (iv) antennas-per-RU boundary of split dynamics (Proposition~\ref{prop:boundary}); (v) a three-step allocation that matches an enumerative per-RU optimizer, validated with the O-RAN codecs and against the reference results of~\cite{girycki2024eucnc}.
+\end{itemize}
+
+\emph{Notation:} $(\cdot)^{*}$, $(\cdot)^{\mathsf{T}}$, $(\cdot)^{\mathsf{H}}$ denote conjugate, transpose and conjugate transpose; $|\mathcal{A}|$ is the cardinality of a set.
+
+\section{System Model}
+\label{sec:system}
+
+\subsection{Network and Channel}
+\label{subsec:network}
+
+We consider the downlink of the cell-free network of~\cite{girycki2024eucnc,girycki2024twc}: $N$ single-antenna APs serve $U$ single-antenna UEs on $B$ physical resource blocks (PRBs) of 12 subcarriers. The APs are grouped into $R = N/K$ O-RUs of $K$ antennas each; $\mathcal{N}_r$ denotes the APs of RU $r$. All RUs are connected to one distributed unit (DU). The channel between UE $u$ and AP $n$ on PRB $b$ is
+\begin{equation}
+  h_{unb} = \sqrt{\beta_{un}}\, g_{unb},
+\end{equation}
+with large-scale gain $\beta_{un}$ (path loss, antenna gain and log-normal shadowing of the ITU-R M.2135-1 urban-micro model~\cite{itur_m2135}) and small-scale fading $g_{unb}$, $\mathbb{E}|g_{unb}|^2=1$.
+
+Following~\cite{girycki2024twc}, the noise $n_{ub}\sim\mathcal{CN}(0,\sigma_u^2)$ at UE $u$ comprises thermal noise and external (inter-system) interference; its power is log-normal across UEs,
+\begin{equation}
+  \sigma_u^2 = \bar\sigma^2 \exp\!\left(s z_u - s^2/2\right),
+  \label{eq:noise}
+\end{equation}
+with $z_u\sim\mathcal{N}(0,1)$ and $s=4.8\ln(10)/10$, so that the linear mean equals the nominal noise level $\bar\sigma^2$ and the standard deviation is \SI{4.8}{dB}.
+\note{\eqref{eq:noise} is needed to reproduce~\cite{girycki2024eucnc}; with a fixed noise power the MRT results at high noise are about 30\% low (Section~\ref{subsec:repro}).}
+
+\subsection{Precoding, Serving APs and Spectral Efficiency}
+\label{subsec:precoding}
+
+AP $n$ transmits $x_{nb} = \sum_{u} w_{nub} s_{ub}$ with $\mathbb{E}|s_{ub}|^2=1$, subject to the per-AP, per-PRB power constraint $\sum_u |w_{nub}|^2\le P_{\max}$. The serving set $\mathcal{S}\subseteq\{1,\dots,N\}$ and, for MRT, the UE $u_n$ served by AP $n$ follow the precoding-aware heuristics of~\cite{girycki2024twc} (Algorithm~1 for MRT, Algorithm~2 for ZF); each heuristic orders the APs and admits an AP only if it improves the sum spectral efficiency (SE).
+\begin{itemize}
+  \item \emph{MRT:} each serving AP serves one UE with full power, $w_{nub} = \sqrt{P_{\max}}\, h^*_{u_n nb}/|h_{u_n nb}|$ for $u=u_n$ and zero otherwise.
+  \item \emph{ZF:} with $\mathbf{H}_b\in\mathbb{C}^{U\times|\mathcal{S}|}$ the channel of the serving APs, $\tilde{\mathbf{W}}_b = \mathbf{H}_b^{\mathsf{H}}(\mathbf{H}_b\mathbf{H}_b^{\mathsf{H}})^{-1}$ and, as in~\cite[eq.~(18)]{girycki2024twc},
+  \begin{equation}
+    \mathbf{W}_b = \sqrt{\frac{P_{\max}}{\max_n \sum_u |\tilde w_{nub}|^2}}\;\tilde{\mathbf{W}}_b .
+    \label{eq:zfnorm}
+  \end{equation}
+\end{itemize}
+With ideal fronthaul, the SINR of UE $u$ on PRB $b$ is
+\begin{equation}
+  \mathrm{SINR}_{ub} = \frac{S_{ub}}{I_{ub}+\sigma_u^2},
+  \label{eq:sinr}
+\end{equation}
+where $S_{ub} = |\sum_{n} h_{unb} w_{nub}|^2$ and $I_{ub} = \sum_{u'\neq u}|\sum_n h_{unb} w_{nu'b}|^2$.
+The sum SE is $\mathrm{SE} = \sum_u \frac{1}{B}\sum_b f(\mathrm{SINR}_{ub})$. The reference~\cite{girycki2024eucnc} uses $f(x)=\log_2(1+x)$; since a single NR layer cannot exceed the highest modulation and coding scheme (MCS), our main results use $f$ = the highest spectral efficiency of the PDSCH MCS table~\cite[Table~5.1.3.1-2]{ts38214} not exceeding $\log_2(1+x)$ (256QAM, at most 7.41~bit/s/Hz), and Table~5.1.3.1-4 (1024QAM, 9.26~bit/s/Hz) as a sensitivity case. Each UE uses the modulation order $Q_{m,u}$ of its MCS.
+\note{\cite{girycki2024twc} sums signal and interference over the PRBs before forming the SINR; this changes the sum SE by less than 1\% in our setting.}
+
+Following~\cite{girycki2024eucnc}, the beamforming type $F\in\{\mathrm{MRT},\mathrm{ZF}\}$ and the number of considered APs $\hat M$ are chosen per network state as the smallest $\hat M$ whose mean sum SE reaches $\kappa = 0.98$ of the maximum, and the type with the higher SE at that point. $\mathrm{SE}_{\max}$ denotes the maximum sum SE along the serving-AP sequence with ideal fronthaul.
+
+\subsection{Functional Splits}
+\label{subsec:splits}
+
+As in~\cite{girycki2024eucnc}, each RU uses one of two lower-layer splits~\cite{tr38801,tr38816,oran_cus_v22}:
+\begin{itemize}
+  \item \emph{7-1:} precoding, beamforming and resource-element mapping in the DU; the fronthaul carries frequency-domain IQ samples per antenna, $x_{nb}$, $n\in\mathcal{N}_r\cap\mathcal{S}$. The RU performs the inverse FFT and cyclic-prefix insertion.
+  \item \emph{7-2} (O-RAN 7-2x with beamforming in the RU): the fronthaul carries the UE-layer symbols $s_{ub}$ of the UEs served by the RU. For ZF, the DU computes the weights and sends the block $\{w_{nub}\}_{n\in\mathcal{N}_r}$ per UE and PRB in the C-plane (Section Extension 11~\cite{oran_cus_v22}); for MRT, the RU computes its weights from its own SRS (SRS-based beamforming~\cite{oran_cus_v22}).
+\end{itemize}
+The 7-1 split corresponds to an O-RAN Category-A O-RU with antenna-level streams, the 7-2 split to a Category-B O-RU. Split 8 is left for future work.
+
+\subsection{Fronthaul Compression}
+\label{subsec:compression}
+
+We use the compression methods of~\cite[Annex~A]{oran_cus_v22}:
+\begin{itemize}
+  \item \emph{BFP for antenna-level IQ (7-1).} Each block of 12 resource elements (REs) of one antenna and one OFDM symbol shares an exponent (8-bit parameter); each I/Q component has $w$ bits, i.e., $2w+2/3$ bits per RE.
+  \item \emph{Modulation compression (7-2).} Unprecoded constellation points are represented without loss by $Q_{m,u}$ bits per RE~\cite{lagen2021modcomp}.
+  \item \emph{BFP for beamforming weights (7-2, ZF).} The $n_r = |\mathcal{N}_r\cap\mathcal{S}|$ weights of one UE on one bundle (here one PRB) form a block with width $b$ and an 8-bit parameter, plus a 16-bit beam identifier.
+\end{itemize}
+All IQ data are first quantized to 16-bit fixed point with a 15~dB back-off.
+
+\emph{Distortion model.} The BFP error of 7-1 is zero-mean, uncorrelated with the signal and independent across antennas, with power $\rho(w)P_{nb}$, where $P_{nb}=\sum_u|w_{nub}|^2$ and
+\begin{equation}
+  \rho(w) \approx c\,4^{-w},\qquad c\approx 3.5 ,
+  \label{eq:rho}
+\end{equation}
+measured with the O-RAN BFP codec (Table~\ref{tab:rho}). The BFP error of a weight block follows from the block exponent $e$ set by the largest component in the block: it is uniform within $\pm 2^{e}/2$ (in fixed-point units), i.e., its variance per complex weight is $v = 2\cdot 4^{e}/12$ after rescaling.
+
+\begin{table}[t]
+\centering
+\caption{Relative distortion $\rho(w)$ of the O-RAN BFP codec (block of 12 REs, 16-bit input, 15~dB back-off).}
+\label{tab:rho}
+\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{@{}lcccccccccc@{}}
+\toprule
+$w$ & 4 & 5 & 6 & 7 & 8 & 9 & 10 & 11 & 12 & 16-bit \\
+\midrule
+$\rho$ [dB] & $-18.6$ & $-24.6$ & $-30.7$ & $-36.7$ & $-42.7$ & $-48.8$ & $-54.8$ & $-60.7$ & $-66.7$ & $-86.1$ \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Fronthaul Load}
+\label{subsec:load}
+
+The load formulas of~\cite{girycki2024eucnc} multiply the RE rate by the number of streams and the bits per RE ($q=32$), plus a constant signalling overhead per RU taken from~\cite{tr38816}. We keep this structure, replace $q$ by the bits per RE of the compression method, and replace the constant overheads by the O-RAN message formats (eCPRI and Ethernet headers per message, one C-plane section per stream and slot). Per PRB and slot (168 REs), the payload of RU $r$ is
+\begin{align}
+  L^{7\text{-}1}_r &= n_r\cdot 168\,(2w_r + 2/3), \label{eq:l71}\\
+  L^{7\text{-}2}_r &= 168\sum_{u\in\mathcal{U}_r} Q_{m,u} + \mathbb{1}_{\mathrm{ZF}}\,|\mathcal{U}_r|\,(2 b_r n_r + 24), \label{eq:l72}
+\end{align}
+where $\mathcal{U}_r$ are the UEs served by RU $r$ (all $U$ UEs for ZF). The uplink channel information needed by the DU for ZF is the antenna-level SRS IQ (7-1) or the smaller of antenna-level SRS IQ and SRS channel estimates (Section Type~6~\cite{oran_cus_v22}) for 7-2; with an SRS period of 10~ms it is below 2\% of the total load. The load of RU $r$, $R_r$ in bit/s, is the sum of downlink U-plane, C-plane (including weights) and uplink channel information.
+\note{Reproduction of~\cite{girycki2024eucnc}: $\Gamma = 537.6$~Mbit/s is the RE rate of 50 PRBs at 30~kHz times 32 bits; the overheads $\gamma_{7\text{-}2}=713.9$ and $\gamma_{7\text{-}1}=121$~Mbit/s of~\cite{tr38816} are counted for all $N/K$ RUs.}
+
+\section{Problem Formulation}
+\label{sec:problem}
+
+For a given network state (number of UEs $U$, nominal noise $\bar\sigma^2$, beamforming type), the DU chooses the serving set $\mathcal{S}$ and, for every RU, the split $\theta_r\in\{7\text{-}1,7\text{-}2\}$ and the widths $w_r$ (7-1) or $b_r$ (7-2, ZF):
+\begin{align}
+  \text{(P1)}\quad &\min_{\mathcal{S},\{\theta_r,w_r,b_r\}} \sum_r R_r \quad \text{s.t.}\quad \mathrm{SE} \ge \kappa\,\mathrm{SE}_{\max}, \label{eq:p1}\\
+  \text{(P2)}\quad &\max_{\mathcal{S},\{\theta_r,w_r,b_r\}} \mathrm{SE} \quad \text{s.t.}\quad \sum_r R_r \le C . \label{eq:p2}
+\end{align}
+(P1) is the load-minimization problem of~\cite{girycki2024eucnc} with compression; (P2) is its dual for a capacity-limited (e.g., shared wireless) fronthaul. We compare two time scales: \emph{per state}, where the decision parameters are fixed for a network state and applied to all channel realizations, and \emph{per drop}, where they are re-optimized for every channel realization.
+
+\section{Analysis}
+\label{sec:analysis}
+
+\begin{proposition}[Compression as an SINR ceiling]
+\label{prop:cap}
+Under the distortion model of Section~\ref{subsec:compression} and a receiver that estimates the effective gain per PRB from the DMRS, the SINR with compressed fronthaul is
+\begin{equation}
+  \mathrm{SINR}^{\mathrm{c}}_{ub} = \frac{S_{ub}}{I_{ub}+\sigma_u^2+D_{ub}},
+\end{equation}
+\begin{multline}
+  D_{ub} = \sum_{r:\,\theta_r=7\text{-}1}\rho(w_r)\sum_{n\in\mathcal{N}_r\cap\mathcal{S}}|h_{unb}|^2 P_{nb} \\
+  + \sum_{r:\,\theta_r=7\text{-}2,\mathrm{ZF}}\ \sum_{u'\ne u} v_{r u' b}\sum_{n\in\mathcal{N}_r\cap\mathcal{S}}|h_{unb}|^2 .
+\end{multline}
+If all RUs use 7-1 with the same width $w$, then with the coherent gain ratio $G_{ub} = S_{ub}/\sum_{n\in\mathcal{S}}|h_{unb}|^2P_{nb}$,
+\begin{equation}
+  \mathrm{SINR}^{\mathrm{c}}_{ub} = \frac{S_{ub}}{I_{ub}+\sigma_u^2+\rho(w)S_{ub}/G_{ub}},
+\end{equation}
+i.e., compression caps the SINR at $G_{ub}/\rho(w)$.
+\end{proposition}
+\begin{IEEEproof}
+For 7-1, $\hat x_{nb}=x_{nb}+e_{nb}$ and $\sum_n h_{unb}e_{nb}$ is zero-mean, uncorrelated with the signal, with variance $\sum_n|h_{unb}|^2\rho(w_r)P_{nb}$. For 7-2 with ZF, $\hat x_{nb}=\sum_{u'}(w_{nu'b}+\epsilon_{nu'b})s_{u'b}$; the term $\sum_n h_{unb}\epsilon_{nub}$ is a fixed perturbation of the effective channel of UE $u$ on PRB $b$ and is absorbed by the DMRS-based gain estimate, while the terms $u'\ne u$ are zero-mean, independent across blocks, with variance $v_{ru'b}\sum_{n}|h_{unb}|^2$. With a linear MMSE gain estimate, the SINR is the signal power over the power of all uncorrelated components. For a common $w$, $D_{ub}=\rho(w)\sum_n|h_{unb}|^2P_{nb}=\rho(w)S_{ub}/G_{ub}$.
+\end{IEEEproof}
+
+\begin{corollary}[Required width]
+\label{cor:width}
+For ZF ($I_{ub}=0$), $\mathrm{SINR}^{\mathrm{c}}_{ub}\ge\mathrm{SINR}_{\mathrm{t}}$ with $\mathrm{SINR}_{\mathrm{t}}<\mathrm{SINR}_{ub}$ requires $w\ge\frac12\log_2\!\big(c/(G_{ub}(1/\mathrm{SINR}_{\mathrm{t}}-1/\mathrm{SINR}_{ub}))\big)$. With an MCS ceiling, $\mathrm{SINR}_{\mathrm{t}}$ is the lower edge of the current MCS; the larger the SINR margin above the highest MCS, the smaller the required width.
+\end{corollary}
+
+\begin{proposition}[Per-RU split threshold]
+\label{prop:threshold}
+For ZF ($\mathcal{U}_r$ = all $U$ UEs), widths $w$ (7-1) and $b$ (7-2), and mean modulation order $\bar Q_m$, if $168(2w+2/3)>2bU$, then $L^{7\text{-}2}_r<L^{7\text{-}1}_r$ if and only if
+\begin{equation}
+  n_r > n^\star = \frac{U\,(168\,\bar Q_m + 24)}{168\,(2w+2/3) - 2bU}.
+  \label{eq:nstar}
+\end{equation}
+\end{proposition}
+\begin{IEEEproof}
+From~\eqref{eq:l71}--\eqref{eq:l72}, $L^{7\text{-}1}_r-L^{7\text{-}2}_r = n_r\,[168(2w+2/3)-2bU] - U(168\bar Q_m+24)$, which is increasing in $n_r$ when the bracket is positive and vanishes at $n^\star$.
+\end{IEEEproof}
+
+\begin{corollary}[MRT]
+\label{cor:mrt}
+With MRT and RU-local weights, $L^{7\text{-}2}_r = 168\sum_{u\in\mathcal{U}_r}Q_{m,u}\le 168\,Q_{\max} n_r$ because each AP serves one UE ($|\mathcal{U}_r|\le n_r$). Hence 7-2 is never worse than 7-1 when $2w+2/3>Q_{\max}$, i.e., for all $w\ge4$ with 256QAM and all $w\ge5$ with 1024QAM.
+\end{corollary}
+
+\begin{corollary}[Uncompressed case]
+With 32 bits per RE on both splits and no weights, $n^\star = U$: 7-2 is preferable when the RU serves more antennas than UEs, as in~\cite{girycki2024eucnc}. Compression scales the threshold by about $\bar Q_m/(2w+2/3)$.
+\end{corollary}
+
+\begin{corollary}[Why adaptation remains necessary]
+\label{cor:dynamic}
+$n^\star$ depends on the state through $\bar Q_m$ (SNR), $w$, $b$ (Corollary~\ref{cor:width}) and $U$. An RU whose $n_r$ lies between $\min_s n^\star(s)$ and $\max_s n^\star(s)$ over the states $s$ must change its split with the state; with MRT states (Corollary~\ref{cor:mrt}) and ZF states with $n_r<n^\star$, the split also changes with the beamforming type.
+\end{corollary}
+
+\begin{proposition}[Water-filling of the compression widths]
+\label{prop:wf}
+Linearize the SE loss as $\Delta\mathrm{SE}\approx\sum_r g_r\,\rho(w_r)$, where $g_r=\sum_{b,u}\frac{\partial\,\mathrm{SE}}{\partial D_{ub}}\sum_{n\in\mathcal{N}_r\cap\mathcal{S}}|h_{unb}|^2P_{nb}$ (and $g'_r$ analogously for the weight blocks), and let $a_r$ be the load per bit of width: $a_r=336\,n_r$ for 7-1 and $a'_r=2n_rU$ for the 7-2 weights. The continuous relaxation
+\begin{equation}
+  \min_{\{w_r\}}\sum_r a_r w_r\quad\text{s.t.}\quad \sum_r g_r\,c\,4^{-w_r}\le\Delta
+\end{equation}
+is convex and its solution is
+\begin{equation}
+  w_r = t + \tfrac12\log_2\!\left(g_r/a_r\right),
+  \label{eq:wf}
+\end{equation}
+with one scalar $t$ for the whole network, set by the SE constraint; the 7-2 weight widths follow the same rule with $g'_r,a'_r$ and the same $t$.
+\end{proposition}
+\begin{IEEEproof}
+The objective is linear and $4^{-w}$ is convex, so the problem is convex and the KKT conditions are sufficient. Stationarity of $\sum_r a_rw_r+\mu(\sum_r g_rc4^{-w_r}-\Delta)$ gives $a_r=\mu c\ln4\,g_r4^{-w_r}$, i.e., $w_r=\frac12\log_2(\mu c\ln 4)+\frac12\log_2(g_r/a_r)$. The multiplier $\mu$, hence $t=\frac12\log_2(\mu c\ln4)$, is monotone in $\Delta$.
+\end{IEEEproof}
+
+\begin{remark}
+An RU receives half a bit more per 3~dB of SE-weighted incoherent contribution per unit of load. Since one weight bit costs far less load than one data bit ($a'_r\ll a_r$), the weights get about two bits more than the antenna-level IQ for $U=10$.
+\end{remark}
+
+\begin{proposition}[Boundary of split dynamics]
+\label{prop:boundary}
+Let $\hat M(s)$ be the number of serving APs in ZF state $s$ and assume that all $N/K$ RUs are active with $n_r\approx\hat M(s)K/N$. If $\hat M(s)K/N>n^\star(s)$ for every ZF state, the 7-2 split is optimal for every RU in every state and the split need not adapt. Hence split adaptation is needed only for
+\begin{equation}
+  K < K^\star = \max_{s\in\mathrm{ZF}} \frac{N\,n^\star(s)}{\hat M(s)}.
+  \label{eq:kstar}
+\end{equation}
+\end{proposition}
+\begin{IEEEproof}
+By Proposition~\ref{prop:threshold}, ZF RUs with $n_r>n^\star(s)$ choose 7-2; by Corollary~\ref{cor:mrt}, all MRT RUs choose 7-2. Substituting $n_r\approx\hat MK/N$ gives the condition. For $K<K^\star$, some ZF state has $n_r<n^\star$ and needs 7-1, whereas the MRT states need 7-2.
+\end{IEEEproof}
+
+\section{Three-Step Allocation}
+\label{sec:algorithm}
+
+Propositions~\ref{prop:threshold} and~\ref{prop:wf} decouple (P1):
+\begin{algorithm}[t]
+\caption{Three-step split and compression allocation}
+\label{alg:cf}
+\begin{algorithmic}[1]
+\State Order the APs with the heuristic of~\cite{girycki2024twc}; for $\kappa_s\in[\kappa,1]$, take the serving set $\mathcal{S}$ at which the ideal sum SE reaches $\kappa_s\,\mathrm{SE}_{\max}$.
+\For{each scalar $t$ (one-dimensional search)}
+  \State For each RU, compute $w_r$, $b_r$ by~\eqref{eq:wf} (rounded, clipped to $4\ldots12$).
+  \State For each RU, choose 7-2 if $n_r>n^\star(w_r,b_r)$ by~\eqref{eq:nstar} (ZF) or always (MRT, Corollary~\ref{cor:mrt}); else 7-1.
+  \State Evaluate SE with Proposition~\ref{prop:cap} and the load $\sum_r R_r$.
+\EndFor
+\State Return the feasible $(\kappa_s,t)$ with the smallest load (P1), or the largest SE within capacity $C$ (P2).
+\end{algorithmic}
+\end{algorithm}
+Each evaluation costs $O(RBU)$ operations. For comparison we use an enumerative per-RU optimizer (OPT) that lists, for every RU, all splits and widths and selects them by Lagrangian relaxation of the linearized SE constraint with a sweep of the multiplier.
+
+\section{Simulation Setup and Reproduction}
+\label{sec:setup}
+
+\begin{table}[t]
+\centering
+\caption{Simulation parameters (reference scenario of~\cite{girycki2024eucnc}).}
+\label{tab:params}
+\footnotesize
+\begin{tabular}{@{}lp{0.68\columnwidth}@{}}
+\toprule
+APs / area & $N=64$, hexagonal grid, 40~m spacing, 320~m $\times$ 277~m \\
+AP height, gain & 10~m, 2.15~dBi \\
+Carrier & 4~GHz, 30~kHz, 50 PRBs (18~MHz) \\
+$P_{\max}$ & 10~dBm per PRB \\
+Noise (mean) & $\bar\sigma^2\in\{-90,-70,-50\}$~dBm per PRB, log-normal 4.8~dB per UE \\
+UEs & $U\in\{5,10,20\}$, uniform, 1.5~m, stationary, full buffer \\
+Large scale & ITU-R M.2135-1 UMi, LOS probability, shadowing 3/4~dB \\
+Small scale & tapped delay line, delay spread 49/100~ns (LOS/NLOS), Rician 9~dB \\
+RU size & $K\in\{1,2,4,8,16,32,64\}$ \\
+SE & MCS table 2 (256QAM); table 4 (1024QAM); Shannon for reproduction \\
+$\kappa$, $\kappa_s$ & 0.98; $\{0.98,0.984,\dots,1\}$ \\
+Compression & BFP $w\in\{4,\dots,12\}$, 16-bit; modulation compression; weight BFP $b\in\{4,\dots,12\}$ \\
+SRS & every 10~ms, 16 UEs per SRS symbol \\
+Drops & 100 per state; 9 states \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reproduction of~\cite{girycki2024eucnc}}
+\label{subsec:repro}
+
+Table~\ref{tab:repro} compares the mean sum SE at $\kappa=0.98$ (Shannon) with~\cite[Fig.~5]{girycki2024eucnc}. With the noise model~\eqref{eq:noise} and the ZF normalization~\eqref{eq:zfnorm}, all nine states agree within $-8\%$ to $-0.5\%$ and the beamforming choice coincides; for 10 UEs at $-90$~dBm, 33 APs are needed (32 in~\cite{girycki2024eucnc}). With a fixed noise power and equal-power ZF, the ZF results still agree but the MRT results at $-50$~dBm are about 30\% low, because the log-normal noise raises the SE in the noise-limited regime (Jensen's inequality) while the channel-inversion normalization lowers the ZF SE at high SNR; the two effects cancel for ZF.
+
+\begin{table}[t]
+\centering
+\caption{Mean sum SE [bit/s/Hz] at $\kappa=0.98$ (Shannon) and number of considered APs; reference values from~\cite[Fig.~5]{girycki2024eucnc}.}
+\label{tab:repro}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+$(U,\bar\sigma^2)$ & fixed noise, equal-power ZF & this model ($\hat M$) & \cite{girycki2024eucnc} \\
+\midrule
+(5, $-90$) & ZF 64.5 & ZF 66.7 (20) & ZF 67 \\
+(5, $-70$) & MRT 33.2 & MRT 36.4 (40) & MRT 37 \\
+(5, $-50$) & MRT 9.7 & MRT 13.1 (58) & MRT 14 \\
+(10, $-90$) & ZF 125.7 & ZF 126.5 (33) & ZF 127 \\
+(10, $-70$) & ZF 60.8 & ZF 60.6 (39) & ZF 62 \\
+(10, $-50$) & MRT 15.5 & MRT 21.2 (61) & MRT 22 \\
+(20, $-90$) & ZF 240.7 & ZF 231.9 (47) & ZF 238 \\
+(20, $-70$) & ZF 111.3 & ZF 103.5 (52) & ZF 109 \\
+(20, $-50$) & MRT 22.5 & MRT 30.4 (61) & MRT 33 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\note{With the channel-inversion ZF and the MCS ceiling, one of 900 drops (20 UEs, $-70$~dBm) has zero SE because a UE in a deep fade takes almost all power; it is excluded.}
+
+\section{Results}
+\label{sec:results}
+
+\todo{System diagram of the two splits and of what crosses the fronthaul.} All results in this section use the noise model~\eqref{eq:noise}, the ZF normalization~\eqref{eq:zfnorm} and, unless stated otherwise, MCS table 2.
+
+\subsection{Validation of the Analysis}
+\label{subsec:validation}
+
+\emph{SINR ceiling.} Fig.~\ref{fig:prop1} shows the mean SINR for 10 UEs at $-90$~dBm with ZF and $K=8$ when all RUs use 7-1 with BFP width $w$, or 7-2 with weight width $b$ (40 drops). Proposition~\ref{prop:cap} and the O-RAN codec agree within 0.6~dB from 6 bits on and within 1.2~dB at 5 bits; at 4 bits the model is pessimistic by 1.0~dB (7-1) and 2.2~dB (weights). For 7-1 at small widths the SINR follows the ceiling $G/\rho(w)$; from 5--6 bits on, the mean SINR exceeds that of the highest MCS (22.3~dB), which is why 5--6 bits suffice under the MCS ceiling (Corollary~\ref{cor:width}).
+
+\begin{figure}[t]
+\centering
+\input{Figure/fig_prop1.tex}
+\caption{Mean SINR versus BFP width for 10 UEs at $-90$~dBm, ZF, $K=8$: Proposition~\ref{prop:cap} (lines) versus the O-RAN BFP codec (marks).}
+\label{fig:prop1}
+\end{figure}
+
+\emph{Split threshold.} Fig.~\ref{fig:prop2} shows the per-RU decisions of the enumerative optimizer OPT (30 drops per state, $K\in\{1,\dots,32\}$) against $n_r/n^\star$, where $n^\star$ uses the width chosen for the RU. All 10\,063 decisions in ZF states follow Proposition~\ref{prop:threshold}: 7-2 is chosen if and only if $n_r>n^\star$. All RUs in MRT states choose 7-2 (Corollary~\ref{cor:mrt}). The same holds for 44\,036 decisions with a fixed noise power.
+
+\begin{figure}[t]
+\centering
+\input{Figure/fig_prop2.tex}
+\caption{Share of RUs for which OPT chooses 7-2 in the ZF states, versus $\log_2(n_r/n^\star)$ (10\,063 RU decisions).}
+\label{fig:prop2}
+\end{figure}
+
+\emph{Three-step allocation.} Table~\ref{tab:prop3} compares Algorithm~\ref{alg:cf} with one network-wide width (CF-U), with the water-filling widths of Proposition~\ref{prop:wf} (CF-WF), and with the enumerative per-RU optimizer (OPT). CF-WF matches OPT within $-0.4\%$ to $+0.1\%$ for both MCS tables; a single network-wide width costs up to 6--7\% at $K=1$ (9--10\% in the ZF states), because the RUs' contributions to the distortion differ strongly when the RUs are small. Fig.~\ref{fig:prop3} checks Proposition~\ref{prop:wf} directly: with one scalar $t$ per drop, the width $\mathrm{clip}(\mathrm{round}(t+\frac12\log_2(g_r/a_r)),4,12)$ equals the width chosen by OPT for 94.4\% of the 7-1 RUs and 97.7\% of the 7-2 weight blocks (ZF states), and never differs by more than one bit. Many small RUs at $K\le2$ would need fewer than 4 bits and are clipped.
+
+\begin{figure}[t]
+\centering
+\input{Figure/fig_prop3.tex}
+\caption{Widths chosen by OPT versus the water-filling prediction of Proposition~\ref{prop:wf} (mean and standard deviation per bin; ZF states, 30 drops per state, $K\in\{1,\dots,32\}$).}
+\label{fig:prop3}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Per-drop P1 load [Gbit/s], mean over the 9 states; serving APs by~\cite{girycki2024twc}. In brackets: difference to OPT.}
+\label{tab:prop3}
+\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{@{}rcccccc@{}}
+\toprule
+ & \multicolumn{3}{c}{256QAM (MCS table 2)} & \multicolumn{3}{c}{1024QAM (MCS table 4)} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+$K$ & CF-U & CF-WF & OPT & CF-U & CF-WF & OPT \\
+\midrule
+1 & 4.77 (+6.0\%) & 4.49 ($-0.2\%$) & 4.50 & 5.37 (+7.2\%) & 5.01 (0.0\%) & 5.01 \\
+2 & 4.53 (+4.6\%) & 4.32 ($-0.3\%$) & 4.33 & 5.12 (+5.5\%) & 4.85 ($-0.1\%$) & 4.86 \\
+4 & 4.27 (+3.1\%) & 4.13 ($-0.2\%$) & 4.14 & 4.85 (+3.8\%) & 4.66 ($-0.3\%$) & 4.67 \\
+8 & 4.05 (+2.4\%) & 3.95 ($-0.1\%$) & 3.96 & 4.61 (+3.0\%) & 4.47 ($-0.1\%$) & 4.48 \\
+16 & 3.69 (+2.8\%) & 3.59 (0.0\%) & 3.59 & 4.18 (+2.7\%) & 4.07 (0.0\%) & 4.07 \\
+32 & 2.68 (+1.4\%) & 2.64 ($-0.2\%$) & 2.64 & 3.03 (+1.4\%) & 2.99 (0.0\%) & 2.99 \\
+64 & 1.76 ($-0.3\%$) & 1.76 ($-0.2\%$) & 1.76 & 1.95 ($-0.1\%$) & 1.95 (0.0\%) & 1.95 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\emph{O-RAN codecs.} For the per-drop choices of Algorithm~\ref{alg:cf} (20 drops per state, $K\in\{1,4,16,64\}$, 716 cases), passing the signals and weights through the O-RAN BFP codec gives a mean SE of $0.9882\,\mathrm{SE}_{\max}$ against $0.9875$ predicted by Proposition~\ref{prop:cap} (256QAM) and $0.9870$ against $0.9865$ (1024QAM). 4.6\% / 4.7\% of the drops fall below 0.98, the lowest at 0.976 / 0.977, which reflects the single-slot evaluation around MCS boundaries.
+
+\subsection{Where the Value of Adaptation Comes From}
+\label{subsec:dynamics}
+
+Table~\ref{tab:dyn} decomposes the mean P1 load (Algorithm~\ref{alg:cf}, mean over the 9 states) into: ST, one split, width and $\kappa_s$ for all states and RUs; SU, per state but network-wide; F, a fixed split (all 7-1 or all 7-2) with per-state widths; G, a fixed nominal width for all states with per-RU rules; S, per state with per-RU rules; D, per drop. The last columns give the loss of removing one degree of freedom relative to S; Fig.~\ref{fig:dyn} shows the loads versus $K$.
+
+\begin{figure*}[t]
+\centering
+\input{Figure/fig_dyn.tex}
+\caption{Mean P1 load versus the number of antennas per RU for the adaptation levels of Table~\ref{tab:dyn}. The gap between F and S is the value of switching the split with the state; the gap between G and S the value of adapting the compression ratio over time.}
+\label{fig:dyn}
+\end{figure*}
+
+\begin{table*}[t]
+\centering
+\caption{Mean P1 load [Gbit/s] and value of each degree of adaptation. Losses relative to S: split fixed over states (F), compression ratio fixed over states (G), network-wide instead of per RU (SU); per-drop gain (D).}
+\label{tab:dyn}
+\footnotesize
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{@{}r cccccc ccccc c cccccc ccccc@{}}
+\toprule
+ & \multicolumn{11}{c}{256QAM (MCS table 2)} & & \multicolumn{11}{c}{1024QAM (MCS table 4)} \\
+\cmidrule(lr){2-12}\cmidrule(lr){14-24}
+$K$ & ST & SU & F & G & S & D & ST$\to$S & F & G & SU & D & & ST & SU & F & G & S & D & ST$\to$S & F & G & SU & D \\
+\midrule
+1 & 7.14 & 4.70 & 5.84 & 4.92 & 4.55 & 4.49 & 36.4 & 22.2 & 7.6 & 3.3 & 1.2 && 8.36 & 5.34 & 6.38 & 5.63 & 5.09 & 5.02 & 39.2 & 20.3 & 9.7 & 4.7 & 1.4 \\
+2 & 7.14 & 4.47 & 5.92 & 4.62 & 4.37 & 4.33 & 38.8 & 26.2 & 5.4 & 2.2 & 1.1 && 8.36 & 5.09 & 6.49 & 5.40 & 4.92 & 4.86 & 41.2 & 24.2 & 9.0 & 3.4 & 1.2 \\
+4 & 7.14 & 4.20 & 6.01 & 4.34 & 4.17 & 4.13 & 41.6 & 30.7 & 3.9 & 0.8 & 1.0 && 8.36 & 4.81 & 6.60 & 5.14 & 4.72 & 4.66 & 43.6 & 28.4 & 8.1 & 1.9 & 1.2 \\
+8 & 7.14 & 4.02 & 6.05 & 4.09 & 3.96 & 3.96 & 44.6 & 34.6 & 3.1 & 1.4 & 0.1 && 8.36 & 4.62 & 6.66 & 4.85 & 4.50 & 4.48 & 46.2 & 32.4 & 7.2 & 2.5 & 0.6 \\
+16 & 5.05 & 3.75 & 5.03 & 3.71 & 3.60 & 3.59 & 28.8 & 28.5 & 3.1 & 4.2 & 0.1 && 5.64 & 4.26 & 5.61 & 4.23 & 4.08 & 4.07 & 27.7 & 27.3 & 3.7 & 4.2 & 0.1 \\
+32 & 2.89 & 2.71 & 2.88 & 2.72 & 2.64 & 2.64 & 8.5 & 8.3 & 2.7 & 2.3 & 0.3 && 3.23 & 3.15 & 3.21 & 3.06 & 2.99 & 2.99 & 7.5 & 6.9 & 2.5 & 5.0 & $-0.2$ \\
+64 & 1.77 & 1.76 & 1.76 & 1.76 & 1.76 & 1.76 & 0.4 & $-0.2$ & 0.2 & 0.1 & 0.0 && 1.98 & 1.95 & 1.95 & 1.98 & 1.95 & 1.95 & 1.4 & $-0.2$ & 1.4 & 0.0 & $-0.1$ \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table*}
+
+The findings are:
+\begin{itemize}
+  \item Adaptation reduces the mean load by 36--45\% for $K\le8$, 29\% for $K=16$, 8.5\% for $K=32$ and nothing for $K=64$ (256QAM).
+  \item Most of the gain comes from switching the split with the state (22--35\% for $K\le16$), as predicted by Corollary~\ref{cor:dynamic}: MRT states always use 7-2, and in ZF states the share of 7-2 RUs depends on the SNR---for $K=16$, 63\% of the RUs use 7-2 at (10~UEs, $-70$~dBm) but 1\% at (10~UEs, $-90$~dBm).
+  \item Adapting the compression ratio over time adds 3--8\% with 256QAM and 7--10\% with 1024QAM for $K\le8$. With 256QAM the per-state nominal width only varies between about 4 and 6 bits, because the SINR margin above the MCS ceiling is large (Corollary~\ref{cor:width}); with 1024QAM the high-SNR ZF states need about 7 bits and the $-70$~dBm states about 5.
+  \item Per-RU heterogeneity adds 1--5\%; re-optimizing per drop adds at most 1.4\%, i.e., per-state parameters combined with the per-RU rules of Propositions~\ref{prop:threshold}--\ref{prop:wf} suffice.
+\end{itemize}
+\emph{Comparison with~\cite{girycki2024eucnc}.} The uncompressed method of~\cite{girycki2024eucnc} (state-level $\hat M$, network-wide split by its load formula, 32-bit IQ) needs on average 16.6~Gbit/s for $K=4$ and 12.5~Gbit/s for $K=16$, at $0.982\,\mathrm{SE}_{\max}$; Algorithm~\ref{alg:cf} with per-state parameters needs 4.17 and 3.60~Gbit/s, i.e., 75\% and 71\% less.
+
+\subsection{Boundary of Split Dynamics}
+\label{subsec:boundary}
+
+Table~\ref{tab:boundary} lists, for the ZF states, the quantities of Proposition~\ref{prop:boundary} at the per-state optimum. The predicted boundary is $K^\star=43.6$ (256QAM) and $39.1$ (1024QAM), consistent with the load reduction of 8.5\% / 7.5\% at $K=32$ and at most 1.4\% at $K=64$ in Table~\ref{tab:dyn}. Using the empirical distribution of $n_r$ instead of its mean, $\Pr[n_r>n^\star(s)]$ predicts the share of 7-2 RUs per state (Fig.~\ref{fig:boundary}); the largest deviations are 0.52 predicted vs.\ 0.40 observed at (20, $-70$) for $K=16$ and 0.38 vs.\ 0.24 at (20, $-90$) for $K=32$.
+
+\begin{table}[t]
+\centering
+\caption{Quantities of Proposition~\ref{prop:boundary} for the ZF states (256QAM); share of 7-2 RUs predicted / observed.}
+\label{tab:boundary}
+\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+$(U,\bar\sigma^2)$ & $\hat M$ & $\bar Q_m$ & width & $n^\star$ & $Nn^\star/\hat M$ & 7-2 share at $K=16$ / $32$ \\
+\midrule
+(5, $-90$) & 5.5 & 8.00 & 5.25 & 3.75 & 43.6 & 0.05/0.06,\; 0.26/0.22 \\
+(10, $-90$) & 11.8 & 8.00 & 5.75 & 7.09 & 38.3 & 0.01/0.01,\; 0.18/0.21 \\
+(10, $-70$) & 30.6 & 7.22 & 5.75 & 6.41 & 13.4 & 0.64/0.63,\; 1.00/0.97 \\
+(20, $-90$) & 28.2 & 8.00 & 6.00 & 14.49 & 32.9 & 0.00/0.01,\; 0.38/0.24 \\
+(20, $-70$) & 49.1 & 6.66 & 5.75 & 12.61 & 16.4 & 0.52/0.40,\; 1.00/0.98 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\input{Figure/fig_boundary.tex}
+\caption{Share of 7-2 RUs in the ZF states versus $K$: prediction $\Pr[n_r>n^\star(s)]$ (lines) and Algorithm~\ref{alg:cf} at the per-state optimum (marks); dashed line: $K^\star$ of Proposition~\ref{prop:boundary}.}
+\label{fig:boundary}
+\end{figure}
+
+\subsection{Capacity-Limited Fronthaul (P2)}
+\label{subsec:p2}
+
+Fig.~\ref{fig:p2} shows the mean $\mathrm{SE}/\mathrm{SE}_{\max}$ when the total fronthaul load must not exceed $C$, with the parameters re-optimized for every drop. For both $K=4$ and $K=16$, Algorithm~\ref{alg:cf} reaches 98\% of $\mathrm{SE}_{\max}$ on average at about 9~Gbit/s, whereas the uncompressed method of~\cite{girycki2024eucnc} needs 31--34~Gbit/s; at $C=5$~Gbit/s it reaches 0.80--0.82 against 0.11--0.13. Per-RU allocation adds at most 1.1 ($K=4$) and 2.8 ($K=16$) percentage points over the best network-wide split and width.
+
+\begin{figure*}[t]
+\centering
+\input{Figure/fig_p2.tex}
+\caption{(P2): mean sum SE relative to $\mathrm{SE}_{\max}$ versus the fronthaul capacity $C$ (per-drop optimization, mean over the 9 states); dash-dotted: $\kappa=0.98$.}
+\label{fig:p2}
+\end{figure*}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\todo{Expand.} Limitations of the present results: stochastic channel model; full channel state information at the DU; single-slot evaluation per drop; serving set common to all PRBs (\cite{girycki2024twc} selects per PRB); serving-AP selection by~\cite{girycki2024twc} is not part of the contribution (a sum-SE greedy selection reduces the load further but is unrelated to the fronthaul); Split 8 is not considered. Robustness: with a fixed noise power and equal-power ZF, the decomposition of Table~\ref{tab:dyn} is similar (41--47\% total for $K\le8$; split switching 26--37\%, compression ratio over time 3--6\%), and Proposition~\ref{prop:wf} again matches OPT within $-0.4\%$ to $0.0\%$.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\todo{Write.}
+
+\printbibliography
+
+\end{document}

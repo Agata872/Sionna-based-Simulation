@@ -1,0 +1,15 @@
+% Proposition 2: per-RU split threshold. Data: data/fig_prop2.dat (S14).
+\begin{tikzpicture}
+\begin{axis}[
+  width=\columnwidth, height=4.4cm,
+  xlabel={$\log_2(n_r/n^\star)$},
+  ylabel={share of RUs choosing 7-2},
+  xmin=-4, xmax=3, ymin=-0.05, ymax=1.05,
+  grid=major, grid style={gray!20},
+  tick label style={font=\scriptsize}, label style={font=\footnotesize},
+]
+\addplot[red!75!black, thick, mark=*, mark size=1.3pt] table[x=logratio, y=share72] {Figure/data/fig_prop2.dat};
+\addplot[black, dashed] coordinates {(0,-0.05) (0,1.05)};
+\node[font=\scriptsize, anchor=west] at (axis cs:0.1,0.5) {$n_r=n^\star$};
+\end{axis}
+\end{tikzpicture}
