@@ -70,17 +70,22 @@ def candidates(N, M, K, ap_ue, num_ue, P_total, P_max):
     return idx, pc[idx], np.flatnonzero(is_a), kvecs
 
 
-def ap_tables(h, ap_ue, K, P_total):
-    """每个 AP 的复幅度表 c[n] [2^M, U]：AP n 激活掩码 s 时 UE u 收到的 h[u,n,S]^H w[n]。"""
+def ap_tables(h, ap_ue, K, P_total, h_w=None):
+    """每个 AP 的复幅度表 c[n] [2^M, U]：AP n 激活掩码 s 时 UE u 收到的 h[u,n,S]^H w[n]。
+
+    w[n] 由 h_w 计算（默认 h_w = h）。非理想 CSI 时 h 为真实信道、h_w 为估计信道。
+    """
+    if h_w is None:
+        h_w = h
     num_ue, N, M = h.shape
     bits = mask_bits(M)
     size = bits.sum(1)
     p = P_total * size / K
     tabs = []
     for n in range(N):
-        hv = h[ap_ue[n], n]                                   # [M] 服务链路
+        hv = h_w[ap_ue[n], n]                                 # [M] 服务链路（用于计算权值）
         norm2 = bits @ (np.abs(hv) ** 2)                      # [2^M]
-        inner = bits @ (np.conj(h[:, n, :]) * hv[None, :]).T  # [2^M, U]，h_u,S^H h_v,S
+        inner = bits @ (np.conj(h[:, n, :]) * hv[None, :]).T  # [2^M, U]，h_u,S^H hw_v,S
         scale = np.zeros_like(norm2)
         nz = size > 0
         scale[nz] = np.sqrt(p[nz] / norm2[nz])
@@ -111,8 +116,12 @@ def sum_se(d, i, betas, noise_vars):
     return np.log2(1.0 + sinr).sum(1)
 
 
-def best(tabs, idx, ap_ue, num_ue, betas, noise_vars, chunk=100_000):
-    """在候选 idx 中逐 (beta, SNR) 取最大 sum SE。返回 (最大值 [nB, nS], 最优候选下标 [nB, nS])。"""
+def best(tabs, idx, ap_ue, num_ue, betas, noise_vars, chunk=100_000, eval_tabs=None):
+    """在候选 idx 中逐 (beta, SNR) 按 tabs 算出的 sum SE 取最大。
+
+    返回 (最大值 [nB, nS], 最优候选下标 [nB, nS])。给出 eval_tabs 时，返回值改为所选候选在 eval_tabs 下的 sum SE
+    （非理想 CSI：按估计信道选择，按真实信道评估）。
+    """
     best_v = np.full((len(betas), len(noise_vars)), -np.inf)
     best_i = np.zeros((len(betas), len(noise_vars)), dtype=np.int64)
     for start in range(0, idx.shape[0], chunk):
@@ -124,6 +133,12 @@ def best(tabs, idx, ap_ue, num_ue, betas, noise_vars, chunk=100_000):
         upd = v > best_v
         best_v[upd] = v[upd]
         best_i[upd] = j[upd] + start
+    if eval_tabs is not None and idx.shape[0]:
+        d, i = signal_interference(amplitudes(eval_tabs, idx[best_i.ravel()], ap_ue, num_ue))
+        nb, ns = best_i.shape
+        b = np.repeat(np.asarray(betas, float), ns)[:, None]
+        s2 = np.tile(np.asarray(noise_vars, float), nb)[:, None]
+        best_v = np.log2(1.0 + d / (b * i + s2)).sum(1).reshape(nb, ns)
     return best_v, best_i
 
 
@@ -138,19 +153,31 @@ def b_candidates(h, ap_ue, kvecs):
     return top[np.arange(N)[None, :], kvecs]
 
 
-def solve(h, ap_ue, K, P_total, P_max, betas, noise_vars):
+def solve(h, ap_ue, K, P_total, P_max, betas, noise_vars, h_est=None):
     """一个信道样本 → A、B、C 的 sum SE [3, nB, nS] 及各自的最优激活数 [3, nB, nS, N]。
 
     h 中干扰链路按 beta = 1 给出，betas 只缩放干扰项。要直接用给定信道（如确定性例子），传 betas = [1]。
+    h_est 给出时（非理想 CSI）：B 的天线排序、MRT 权值和候选选择都用 h_est，返回的 sum SE 用真实 h 评估。
+    h_est 的干扰链路同样按 beta = 1 给出（误差方差与链路 beta 成比例时，beta 缩放仍然成立）。
     """
     num_ue, N, M = h.shape
     ap_ue = tuple(int(x) for x in ap_ue)
     idx, counts, a_pos, kvecs = candidates(N, M, K, ap_ue, num_ue, float(P_total), float(P_max))
-    tabs = ap_tables(h, ap_ue, K, P_total)
-    idx_b = b_candidates(h, ap_ue, kvecs)
+    if h_est is None:
+        tabs, eval_tabs, h_sel = ap_tables(h, ap_ue, K, P_total), None, h
+    else:
+        tabs = ap_tables(h_est, ap_ue, K, P_total)
+        eval_tabs = ap_tables(h, ap_ue, K, P_total, h_w=h_est)
+        h_sel = h_est
+    idx_b = b_candidates(h_sel, ap_ue, kvecs)
     out_v, out_k = [], []
     for cand, cnt in ((idx[a_pos], counts[a_pos]), (idx_b, kvecs), (idx, counts)):
-        v, j = best(tabs, cand, ap_ue, num_ue, betas, noise_vars)
+        v, j = best(tabs, cand, ap_ue, num_ue, betas, noise_vars, eval_tabs=eval_tabs)
         out_v.append(v)
         out_k.append(cnt[j] if len(cand) else np.full(v.shape + (N,), -1, dtype=np.int64))
     return np.stack(out_v), np.stack(out_k)                    # 无可行候选时 sum SE = -inf，激活数 = -1
+
+
+def strongest_mapping(h):
+    """原文规则：每个 AP 服务其完整信道 ||h[u, n, :]||^2 最大的 UE。"""
+    return tuple(int(x) for x in np.argmax(np.sum(np.abs(h) ** 2, axis=2), axis=0))

@@ -11,6 +11,9 @@ import argparse
 import json
 import logging
 import os
+
+for _v in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_v, '1')        # 多进程并行时每个进程单线程 BLAS，避免线程争用
 import platform
 import shutil
 import subprocess
