@@ -1,4 +1,5 @@
 """Compare both Claude implementations against independent outputs and audit every CRC count."""
+from hashlib import sha256
 import json
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import t
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE/"results"
@@ -18,6 +20,14 @@ def load(path):
 def compare_claude():
     replay, holdout = [load(HERE/name) for name in ("claude_replay.json","claude_holdout.json")]
     assert replay["meta"]["all_checks_pass"]
+    source = {name: HERE/name for name in ("claude_replay.py","claude_holdout.py")}
+    source["same_total.py"] = HERE.parent/"same_total.py"
+    for name, digest in holdout["meta"]["sources_sha256"].items():
+        assert sha256(source[name].read_bytes()).hexdigest() == digest, name
+    for name in ("claude_replay","same_total"):
+        assert sha256(source[name+".py"].read_bytes()).hexdigest() == replay["meta"]["inputs"][name+"_py_sha256"], name
+    original_samples = HERE.parent/"results/same_total_20261124/samples.npz"
+    assert sha256(original_samples.read_bytes()).hexdigest() == replay["meta"]["inputs"]["samples_sha256"]
     with np.load(RESULTS/"paired.npz") as f:
         data = {k:f[k] for k in ("case","drop","count","key","power","cap","real","planned")}
     where = {(label,int(d)):i for i,(label,d) in enumerate(zip(data["case"],data["drop"]))}
@@ -62,18 +72,35 @@ def compare_claude():
 
 def compare_crc():
     audit = {}
+
+    def paired_interval(values):
+        mean = values.mean()
+        half = t.ppf(.975,len(values)-1)*values.std(ddof=1)/np.sqrt(len(values))
+        return [mean,mean-half,mean+half]
+
     for folder in (RESULTS, RESULTS/"mcs16",RESULTS/"spacing"):
         with np.load(folder/"crc_pairs.npz") as data:
             for case,row in load(folder/"crc.json").items():
                 errors = data[case]
+                payload = data[case+"_payload_error"]
                 assert errors.shape==(96,2,16,4)
+                assert payload.shape==errors.shape and errors.dtype==payload.dtype==np.bool_
+                assert row["per_policy_tbs"]==errors[:,0].size
                 assert np.array_equal(data[case+"_ids"],np.arange(96))
-                bler = errors.mean(axis=(0,2,3))
-                np.testing.assert_allclose(bler,row["bler"],rtol=0,atol=1e-12)
-                rates = (1-bler)*4*row["tb_bits"]/.0005/1e6
-                np.testing.assert_allclose(rates,row["goodput_mbps"],rtol=0,atol=1e-10)
-                assert row["undetected_block_errors"]==0
-                audit[case] = int(errors[:,0].size)
+                bler = errors.mean(axis=(2,3))
+                delivered = np.logical_not(errors | payload)
+                rates = delivered.mean(axis=(2,3))*4*row["tb_bits"]/.0005/1e6
+                undetected = (~errors & payload).sum(axis=(0,2,3))
+                assert np.array_equal(undetected,row["undetected_by_policy"])
+                assert undetected.sum()==row["undetected_block_errors"]
+                assert np.count_nonzero(~errors[:,0] & errors[:,1])==row["candidate_only_errors"]
+                assert np.count_nonzero(errors[:,0] & ~errors[:,1])==row["base_only_errors"]
+                np.testing.assert_allclose(bler.mean(0),row["bler"],rtol=0,atol=1e-12)
+                np.testing.assert_allclose(payload.mean(axis=(0,2,3)),row["payload_bler"],rtol=0,atol=1e-12)
+                np.testing.assert_allclose(rates.mean(0),row["goodput_mbps"],rtol=0,atol=1e-10)
+                np.testing.assert_allclose(paired_interval(bler[:,1]-bler[:,0]),row["bler_diff_ci"],atol=1e-12)
+                np.testing.assert_allclose(paired_interval(rates[:,1]-rates[:,0]),row["goodput_diff_ci_mbps"],atol=1e-10)
+                audit[case] = dict(blocks_per_policy=int(errors[:,0].size),crc_undetected_by_policy=undetected.tolist())
     return audit
 
 
@@ -95,6 +122,7 @@ def frequency_figure():
         crc16.append(100*np.array(load(path16)[case+"_mcs16"]["bler_diff_ci"]))
         crc20.append(100*np.array(load(folder/"crc.json")[case+"_mcs20"]["bler_diff_ci"]))
     fig,axes = plt.subplots(1,2,figsize=(8.6,3.4),layout="constrained")
+    fig.suptitle("Cross-PRB ZF with 1% CSI NMSE (96 paired layouts)",fontsize=11)
     colors = ("#115b84","#c16320")
     for ax,series,names,ylabel in zip(axes,[(payload,total),(crc16,crc20)],
         [("IQ payload","With fixed signalling"),("MCS 16","MCS 20")],
@@ -109,7 +137,7 @@ def frequency_figure():
         ax.set_xlabel("Spacing between scheduled PRBs (PRBs)")
         ax.set_ylabel(ylabel)
         ax.spines[["top","right"]].set_visible(False)
-        ax.legend(frameon=False,fontsize=8)
+        ax.legend(loc="upper left",frameon=False,fontsize=8)
     fig.savefig(RESULTS/"frequency_spacing.pdf",bbox_inches="tight")
     plt.close(fig)
     return dict(spacing_prbs=[1,4,8], iq_payload_pct=payload,total_7_1_pct=total,
@@ -117,7 +145,7 @@ def frequency_figure():
 
 
 if __name__=="__main__":
-    result=dict(implementation_agreement=compare_claude(),crc_blocks_per_policy=compare_crc(),
+    result=dict(implementation_agreement=compare_claude(),transport_block_checks=compare_crc(),
                 estimates_with_95pct_intervals=frequency_figure())
     (RESULTS/"audit.json").write_text(json.dumps(result,indent=2)+"\n")
     print(result["implementation_agreement"])

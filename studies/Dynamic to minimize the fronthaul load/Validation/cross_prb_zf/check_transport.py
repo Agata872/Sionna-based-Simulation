@@ -40,8 +40,8 @@ def codec(mcs, device):
 def simulate(effective, ids, mcs, repeats, chunk, device):
     tb,enc,dec,mapper,demap = codec(mcs,device)
     n = len(ids)
-    fail = np.zeros((n,2,repeats,USERS),bool)
-    wrong_crc = 0
+    crc_reject = np.zeros((n,2,repeats,USERS),bool)
+    payload_error = np.zeros_like(crc_reject)
     for start in range(0,n,chunk):
         stop = min(start+chunk,n)
         size = stop-start
@@ -71,9 +71,9 @@ def simulate(effective, ids, mcs, repeats, chunk, device):
         decoded, good = dec(demap(equalized.reshape(flat),variance.reshape(flat)))
         good = good.view(size,2,repeats,USERS)
         incorrect = (decoded.view(size,2,repeats,USERS,tb)!=bits[:,None]).any(-1)
-        wrong_crc += int(torch.count_nonzero(incorrect & good))
-        fail[start:stop] = (~good).cpu().numpy()
-    return tb,fail,wrong_crc
+        crc_reject[start:stop] = (~good).cpu().numpy()
+        payload_error[start:stop] = incorrect.cpu().numpy()
+    return tb,crc_reject,payload_error
 
 
 def main():
@@ -98,20 +98,27 @@ def main():
                 if not len(ix):
                     raise ValueError(f"No layouts found for {label}")
                 ids,eff = data["drop"][ix],data["effective"][ix]
-                tb,fail,undetected = simulate(eff,ids,mcs,args.repeats,args.chunk,args.device)
+                tb,fail,payload_error = simulate(eff,ids,mcs,args.repeats,args.chunk,args.device)
                 same = np.all(eff[:,0]==eff[:,1],axis=(1,2,3))
                 assert np.array_equal(fail[same,0],fail[same,1]), "matched waveform control"
-                loss = fail.mean(axis=(2,3))
-                throughput = (1-loss)*USERS*tb/.0005/1e6
+                assert np.array_equal(payload_error[same,0],payload_error[same,1]), "matched payload control"
+                crc_loss = fail.mean(axis=(2,3))
+                undetected = ~fail & payload_error
+                delivered = ~(fail | payload_error)
+                throughput = delivered.mean(axis=(2,3))*USERS*tb/.0005/1e6
                 name = f"{label}_mcs{mcs}"
                 row = dict(mcs=mcs,tb_bits=tb,layouts=len(ids),per_policy_tbs=int(fail[:,0].size),
-                    repeat_per_ue=args.repeats,bler=loss.mean(0).tolist(),bler_diff_ci=ci(loss[:,1]-loss[:,0]),
+                    repeat_per_ue=args.repeats,bler=crc_loss.mean(0).tolist(),
+                    bler_diff_ci=ci(crc_loss[:,1]-crc_loss[:,0]),
+                    payload_bler=payload_error.mean(axis=(0,2,3)).tolist(),
                     goodput_mbps=throughput.mean(0).tolist(),goodput_diff_ci_mbps=ci(throughput[:,1]-throughput[:,0]),
                     candidate_only_errors=int(np.sum(~fail[:,0] & fail[:,1])),
                     base_only_errors=int(np.sum(fail[:,0] & ~fail[:,1])),
-                    identical_channel_layouts=int(np.sum(same)),undetected_block_errors=undetected)
+                    identical_channel_layouts=int(np.sum(same)),undetected_block_errors=int(undetected.sum()),
+                    undetected_by_policy=undetected.sum(axis=(0,2,3)).tolist())
                 metrics[name] = row
                 raw[name] = fail
+                raw[name+"_payload_error"] = payload_error
                 raw[name+"_ids"] = ids
                 print(name, "BLER", row["bler"], "paired diff and CI",row["bler_diff_ci"],flush=True)
     np.savez_compressed(args.out/"crc_pairs.npz",**raw)
